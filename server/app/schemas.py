@@ -34,9 +34,23 @@ def _date_string(value: Any) -> Any:
     return value
 
 
+MAX_INTERVAL_DAYS = 36500
+"""주기 상한(100년). 날짜 계산 overflow와 SQLite 정수 overflow를 막는다. web의 ChoreForm과 같은 값이다."""
+
+MIN_DATE = date(2000, 1, 1)
+MAX_DATE = date(2100, 12, 31)
+"""lastDoneAt 허용 범위. 제품 규칙이 아니라 날짜 계산 overflow를 막기 위한 범위다. web의 ChoreForm과 같은 값이다."""
+
+
+def _date_in_range(value: date) -> date:
+    if not MIN_DATE <= value <= MAX_DATE:
+        raise ValueError(f"날짜는 {MIN_DATE.isoformat()}~{MAX_DATE.isoformat()} 사이여야 한다")
+    return value
+
+
 UtcDatetime = Annotated[datetime, AfterValidator(as_utc)]
-IntervalDays = Annotated[int, Field(strict=True, ge=1)]
-DateOnly = Annotated[date, BeforeValidator(_date_string)]
+IntervalDays = Annotated[int, Field(strict=True, ge=1, le=MAX_INTERVAL_DAYS)]
+DateOnly = Annotated[date, BeforeValidator(_date_string), AfterValidator(_date_in_range)]
 
 
 def _clean_name(value: str) -> str:

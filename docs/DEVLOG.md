@@ -17,8 +17,17 @@
 
 ## 기록
 
-### 2026-10-13 · 집안일 CRUD API (F1)
+### 2026-10-13 · 대시보드와 집안일 추가·편집 화면 (F1, F2, F4, F5)
 - **커밋**: 다음 기록 때 채움
+- **범위**: web | server
+- **내용**: web에 대시보드(F2/F4/F5)와 집안일 추가·편집 화면(F1)을 만들고 `/api/chores`에 연결했다. 완료 체크(F3) 버튼은 disabled 자리만 둔다. 리뷰에서 발견된 결함(주기 상한 없음으로 timedelta overflow 500) 수정으로 서버 스키마에 주기 ≤ 36500(`MAX_INTERVAL_DAYS`), lastDoneAt 2000-01-01~2100-12-31 범위 검증을 추가하고 web 폼에도 같은 검증을 넣었다.
+- **변경 파일**: `web/src/api/chores.ts`, `web/src/api/chores.test.ts`, `web/src/components/ChoreCard.tsx`, `web/src/components/Dashboard.tsx`, `web/src/components/ChoreForm.tsx`, `web/src/lib/formatDate.ts`, `web/src/lib/formatDate.test.ts`, `web/src/test/fetchMock.ts`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/index.css`, `web/package.json`, `web/package-lock.json`(dev 의존성 @testing-library/react, dom, user-event, jsdom 추가), `server/app/schemas.py`, `server/tests/test_chores_api.py`
+- **검증**: pytest 94 passed, npm test 64 passed, typecheck/lint/build 통과
+- **리뷰**: APPROVE (1차 REQUEST_CHANGES: 주기 상한 없음 → 서버·web에 주기 ≤36500, lastDoneAt 2000~2100 범위 검증 추가)
+- **남은 이슈**: 실제 브라우저(360px/데스크톱) 미확인; 게이지가 버튼 안에 있어 스크린리더 노출 문제 가능; 자정 넘김 시 재렌더 전까지 날짜 고정; 서버 422 메시지 원문(영어) 표시; 범위 밖 기존 DB 데이터 미방어
+
+### 2026-10-13 · 집안일 CRUD API (F1)
+- **커밋**: 9020f5d
 - **범위**: server
 - **내용**: `/api/chores`에 목록·단건 GET, POST, PATCH, DELETE(soft delete)를 추가했다. DB는 snake_case, API JSON은 camelCase alias(사용자 결정)이며 시각은 UTC 오프셋 포함으로 응답한다. 서버의 "오늘"은 설정 시간대(`AIFRED_TIMEZONE`, 기본 Asia/Seoul) 날짜로 계산한다.
 - **변경 파일**: `server/app/routers/__init__.py`, `server/app/routers/chores.py`, `server/app/schemas.py`, `server/app/clock.py`, `server/app/config.py`, `server/app/status.py`, `server/app/main.py`, `server/pyproject.toml`, `server/tests/conftest.py`, `server/tests/test_chores_api.py`

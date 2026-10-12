@@ -1,12 +1,345 @@
 :root {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
+
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-text: #1f2328;
+  --color-muted: #656d76;
+  --color-border: #d8dee4;
+  --color-primary: #2f6fde;
+  --color-primary-text: #ffffff;
+  --color-danger: #d1242f;
+
+  /* PRD 4장 상태별 색 */
+  --color-ok: #2da44e;
+  --color-soon: #f08c00;
+  --color-today: #e8590c;
+  --color-overdue: #d1242f;
+  --color-overdue-bg: #fff1f0;
+  --color-today-bg: #fff4e6;
+  --color-gauge-track: #e6e9ed;
+
+  --radius: 12px;
+  --max-width: 640px;
+
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
+.app {
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
 main {
+  padding: 16px 16px 96px;
+}
+
+/* 상단 요약 */
+.summary__date {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.summary__counts {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+}
+
+.summary__overdue {
+  color: var(--color-overdue);
+  font-weight: 600;
+}
+
+.section {
+  margin-top: 24px;
+}
+
+.section__title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.empty,
+.status-message {
+  margin: 0;
   padding: 16px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.status-message {
+  margin-top: 24px;
+}
+
+.status-message--error {
+  color: var(--color-danger);
+}
+
+.status-message--error p {
+  margin: 0 0 8px;
+}
+
+.status-message__detail {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+/* 카드 */
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chore-card {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.chore-card--today {
+  background: var(--color-today-bg);
+}
+
+.chore-card--overdue {
+  border-color: var(--color-overdue);
+  background: var(--color-overdue-bg);
+}
+
+.chore-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chore-card__icon {
+  flex: none;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.chore-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chore-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chore-card__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chore-card__check {
+  flex: none;
+  width: 48px;
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  font-size: 1.25rem;
+  color: var(--color-muted);
+}
+
+.chore-card__check:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.badge--ok {
+  background: var(--color-ok);
+}
+
+.badge--soon {
+  background: var(--color-soon);
+}
+
+.badge--today {
+  background: var(--color-today);
+  box-shadow: 0 0 0 2px var(--color-today-bg), 0 0 0 4px var(--color-today);
+}
+
+.badge--overdue {
+  background: var(--color-overdue);
+}
+
+.gauge {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-gauge-track);
+  overflow: hidden;
+}
+
+.gauge__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.chore-card--ok .gauge__fill {
+  background: var(--color-ok);
+}
+
+.chore-card--soon .gauge__fill {
+  background: var(--color-soon);
+}
+
+.chore-card--today .gauge__fill {
+  background: var(--color-today);
+}
+
+.chore-card--overdue .gauge__fill {
+  background: var(--color-overdue);
+}
+
+/* + 버튼 */
+.fab {
+  position: fixed;
+  right: max(16px, calc((100vw - var(--max-width)) / 2 + 16px));
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  font-size: 2rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  cursor: pointer;
+}
+
+/* 추가·편집 화면 */
+.form-title {
+  margin: 0 0 16px;
+  font-size: 1.5rem;
+}
+
+.chore-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font: inherit;
+  color: inherit;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.field__error,
+.form-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-actions .button {
+  flex: 1;
+}
+
+.button {
+  padding: 10px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+.button--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.form-delete {
+  margin-top: 8px;
 }

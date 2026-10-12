@@ -6,6 +6,7 @@ from sqlmodel import Session
 from app.clock import get_now, get_today, today_in
 from app.main import app
 from app.models import Chore
+from app.schemas import MAX_DATE, MAX_INTERVAL_DAYS, MIN_DATE
 
 FIXED_TODAY = date(2026, 10, 12)  # conftest.client 픽스처가 고정한 오늘
 
@@ -140,6 +141,49 @@ def test_create_conflicts_with_deleted_chore_id(client):
     assert response.status_code == 409
 
 
+def test_create_accepts_max_interval_and_list_still_works(client):
+    body = create(client, intervalDays=MAX_INTERVAL_DAYS)
+
+    assert body["intervalDays"] == 36500
+    response = client.get("/api/chores")
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [body["id"]]
+
+
+@pytest.mark.parametrize("interval", [MAX_INTERVAL_DAYS + 1, 3_000_000, 10**19])
+def test_create_rejects_interval_over_max(client, interval):
+    response = client.post("/api/chores", json={"name": "청소", "intervalDays": interval})
+
+    assert response.status_code == 422
+    assert client.get("/api/chores").json() == []
+
+
+def test_date_range_constants():
+    assert MIN_DATE == date(2000, 1, 1)
+    assert MAX_DATE == date(2100, 12, 31)
+
+
+@pytest.mark.parametrize("last_done_at", ["2000-01-01", "2100-12-31"])
+def test_create_accepts_last_done_at_boundaries(client, last_done_at):
+    # 상한 날짜 + 최대 주기도 계산할 수 있어야 한다.
+    body = create(client, intervalDays=MAX_INTERVAL_DAYS, lastDoneAt=last_done_at)
+
+    assert body["lastDoneAt"] == last_done_at
+    assert client.get("/api/chores").status_code == 200
+
+
+@pytest.mark.parametrize("last_done_at", ["1999-12-31", "2101-01-01", "9999-12-31", "0001-01-01"])
+def test_create_rejects_last_done_at_out_of_range(client, last_done_at):
+    response = client.post(
+        "/api/chores", json={"name": "청소", "intervalDays": 7, "lastDoneAt": last_done_at}
+    )
+
+    assert response.status_code == 422
+    list_response = client.get("/api/chores")
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+
+
 # --- 조회 ---
 
 
@@ -216,6 +260,49 @@ def test_patch_rejects_invalid_or_immutable_fields(client, payload):
 
     assert response.status_code == 422
     assert client.get(f"/api/chores/{body['id']}").json() == body
+
+
+def test_patch_accepts_max_interval(client):
+    body = create(client)
+
+    response = client.patch(f"/api/chores/{body['id']}", json={"intervalDays": MAX_INTERVAL_DAYS})
+
+    assert response.status_code == 200
+    assert response.json()["intervalDays"] == 36500
+    assert client.get("/api/chores").status_code == 200
+
+
+@pytest.mark.parametrize("interval", [MAX_INTERVAL_DAYS + 1, 3_000_000, 10**19])
+def test_patch_rejects_interval_over_max(client, interval):
+    body = create(client)
+
+    response = client.patch(f"/api/chores/{body['id']}", json={"intervalDays": interval})
+
+    assert response.status_code == 422
+    assert client.get(f"/api/chores/{body['id']}").json() == body
+    assert client.get("/api/chores").status_code == 200
+
+
+@pytest.mark.parametrize("last_done_at", ["2000-01-01", "2100-12-31"])
+def test_patch_accepts_last_done_at_boundaries(client, last_done_at):
+    body = create(client)
+
+    response = client.patch(f"/api/chores/{body['id']}", json={"lastDoneAt": last_done_at})
+
+    assert response.status_code == 200
+    assert response.json()["lastDoneAt"] == last_done_at
+    assert client.get("/api/chores").status_code == 200
+
+
+@pytest.mark.parametrize("last_done_at", ["1999-12-31", "2101-01-01", "9999-12-31", "0001-01-01"])
+def test_patch_rejects_last_done_at_out_of_range(client, last_done_at):
+    body = create(client)
+
+    response = client.patch(f"/api/chores/{body['id']}", json={"lastDoneAt": last_done_at})
+
+    assert response.status_code == 422
+    assert client.get(f"/api/chores/{body['id']}").json() == body
+    assert client.get("/api/chores").status_code == 200
 
 
 def test_patch_missing_or_deleted_is_404(client):
