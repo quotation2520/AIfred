@@ -1,0 +1,28 @@
+{
+  "description": "PRD 4장 상태 계산 공유 케이스. web(vitest)과 server(pytest)가 같은 파일을 읽어 검증한다.",
+  "cases": [
+    { "name": "PRD 예시: 수행 당일", "lastDoneAt": "2026-10-05", "intervalDays": 7, "today": "2026-10-05", "remainingDays": 7, "gaugePercent": 100, "status": "ok", "badge": "D-7" },
+    { "name": "PRD 예시: 예정일 하루 전", "lastDoneAt": "2026-10-05", "intervalDays": 7, "today": "2026-10-11", "remainingDays": 1, "gaugePercent": 14.285714285714286, "status": "soon", "badge": "D-1" },
+    { "name": "PRD 예시: 예정일", "lastDoneAt": "2026-10-05", "intervalDays": 7, "today": "2026-10-12", "remainingDays": 0, "gaugePercent": 0, "status": "today", "badge": "D-Day" },
+    { "name": "PRD 예시: 이틀 지연", "lastDoneAt": "2026-10-05", "intervalDays": 7, "today": "2026-10-14", "remainingDays": -2, "gaugePercent": 0, "status": "overdue", "badge": "D+2" },
+
+    { "name": "주기 1일: 수행 당일", "lastDoneAt": "2026-10-05", "intervalDays": 1, "today": "2026-10-05", "remainingDays": 1, "gaugePercent": 100, "status": "soon", "badge": "D-1" },
+    { "name": "주기 1일: 다음 날", "lastDoneAt": "2026-10-05", "intervalDays": 1, "today": "2026-10-06", "remainingDays": 0, "gaugePercent": 0, "status": "today", "badge": "D-Day" },
+    { "name": "주기 1일: 그다음 날", "lastDoneAt": "2026-10-05", "intervalDays": 1, "today": "2026-10-07", "remainingDays": -1, "gaugePercent": 0, "status": "overdue", "badge": "D+1" },
+
+    { "name": "경계: 남은 일수 2", "lastDoneAt": "2026-10-01", "intervalDays": 10, "today": "2026-10-09", "remainingDays": 2, "gaugePercent": 20, "status": "ok", "badge": "D-2" },
+    { "name": "경계: 남은 일수 1", "lastDoneAt": "2026-10-01", "intervalDays": 10, "today": "2026-10-10", "remainingDays": 1, "gaugePercent": 10, "status": "soon", "badge": "D-1" },
+    { "name": "경계: 남은 일수 0", "lastDoneAt": "2026-10-01", "intervalDays": 10, "today": "2026-10-11", "remainingDays": 0, "gaugePercent": 0, "status": "today", "badge": "D-Day" },
+    { "name": "경계: 남은 일수 -1", "lastDoneAt": "2026-10-01", "intervalDays": 10, "today": "2026-10-12", "remainingDays": -1, "gaugePercent": 0, "status": "overdue", "badge": "D+1" },
+    { "name": "게이지 절반", "lastDoneAt": "2026-10-01", "intervalDays": 10, "today": "2026-10-06", "remainingDays": 5, "gaugePercent": 50, "status": "ok", "badge": "D-5" },
+
+    { "name": "월말 넘김: 1월 → 2월", "lastDoneAt": "2026-01-28", "intervalDays": 7, "today": "2026-02-03", "remainingDays": 1, "gaugePercent": 14.285714285714286, "status": "soon", "badge": "D-1" },
+    { "name": "월말 넘김: 10월 → 11월 예정일", "lastDoneAt": "2026-10-30", "intervalDays": 3, "today": "2026-11-02", "remainingDays": 0, "gaugePercent": 0, "status": "today", "badge": "D-Day" },
+    { "name": "연말 넘김: 2026 → 2027 지연", "lastDoneAt": "2026-12-28", "intervalDays": 7, "today": "2027-01-05", "remainingDays": -1, "gaugePercent": 0, "status": "overdue", "badge": "D+1" },
+    { "name": "연말 넘김: 긴 주기", "lastDoneAt": "2026-12-15", "intervalDays": 30, "today": "2027-01-04", "remainingDays": 10, "gaugePercent": 33.33333333333333, "status": "ok", "badge": "D-10" },
+    { "name": "윤년 2월 넘김: 예정일 3/1, 오늘 2/29", "lastDoneAt": "2028-02-27", "intervalDays": 3, "today": "2028-02-29", "remainingDays": 1, "gaugePercent": 33.33333333333333, "status": "soon", "badge": "D-1" },
+
+    { "name": "마지막 수행일이 미래: 게이지 100 제한", "lastDoneAt": "2026-10-20", "intervalDays": 7, "today": "2026-10-13", "remainingDays": 14, "gaugePercent": 100, "status": "ok", "badge": "D-14" },
+    { "name": "오래 밀림", "lastDoneAt": "2026-08-01", "intervalDays": 30, "today": "2026-10-13", "remainingDays": -43, "gaugePercent": 0, "status": "overdue", "badge": "D+43" }
+  ]
+}

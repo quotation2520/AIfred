@@ -17,8 +17,17 @@
 
 ## 기록
 
-### 2026-10-12 · 프로젝트 뼈대(scaffold)
+### 2026-10-13 · 집안일 상태 계산과 오늘 할 일 선택 (PRD 4장, F5)
 - **커밋**: 다음 기록 때 채움
+- **범위**: server | web
+- **내용**: PRD 4장(남은 일수·게이지·상태·배지)과 F5(오늘 할 일 선택·정렬) 계산을 web(TS)과 server(Python)에 같은 규칙으로 구현했다. 오늘 할 일은 남은 일수 ≤ 0(밀린 일 포함), 삭제된 집안일 제외, 남은 일수 오름차순 후 이름 오름차순 정렬. 양쪽 테스트가 공유 케이스 `shared/status-cases.json`(19케이스)을 읽는다. UI/API/DB는 범위 밖.
+- **변경 파일**: `shared/status-cases.json`, `web/src/lib/choreStatus.ts`, `web/src/lib/choreStatus.test.ts`, `server/app/status.py`, `server/tests/test_status.py`, `web/src/smoke.test.ts`(삭제, 실제 테스트로 대체)
+- **검증**: pytest 32 passed (기존 httpx deprecation 경고 1건), npm test 34 passed, typecheck/lint/build 통과; TZ=Asia/Seoul, America/Los_Angeles에서도 vitest 34 passed
+- **리뷰**: APPROVE (결함 없음)
+- **남은 이슈**: 이름 정렬이 코드 단위 비교라 이모지 등 BMP 밖 문자에서 JS/Python 순서가 드물게 다를 수 있음; 이름 동률 정렬 케이스가 공유 JSON에 없고 양쪽 개별 테스트로만 확인됨
+
+### 2026-10-12 · 프로젝트 뼈대(scaffold)
+- **커밋**: bfe26b2
 - **범위**: server | web | infra
 - **내용**: server/(FastAPI + SQLModel + SQLite, `/api/health`, Chore/Completion/Device 모델, pytest)와 web/(React+TS+Vite, vite-plugin-pwa, Dexie, vitest, `/api` 프록시) 뼈대를 만들고 루트 README.md와 .gitignore를 보강했다. 기능 구현은 범위 밖. 시스템 Python 3.12 설치가 깨져 있어 uv 관리 CPython 3.12.15로 server/.venv를 만들었다.
 - **변경 파일**: `.gitignore`, `README.md`, `server/pyproject.toml`, `server/app/__init__.py`, `server/app/config.py`, `server/app/db.py`, `server/app/models.py`, `server/app/main.py`, `server/tests/test_health.py`, `web/package.json`, `web/package-lock.json`, `web/vite.config.ts`, `web/index.html`, `web/src/App.tsx`, `web/src/main.tsx`, `web/src/index.css`, `web/src/smoke.test.ts`, `web/tsconfig.json`, `web/tsconfig.app.json`, `web/tsconfig.node.json`, `web/.oxlintrc.json`
