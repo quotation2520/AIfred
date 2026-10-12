@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import create_db_and_tables
+from app.routers import chores
 
 
 @asynccontextmanager
@@ -13,6 +14,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="AIFred", lifespan=lifespan)
+app.include_router(chores.router)
 
 
 @app.get("/api/health")

@@ -17,8 +17,17 @@
 
 ## 기록
 
-### 2026-10-13 · 집안일 상태 계산과 오늘 할 일 선택 (PRD 4장, F5)
+### 2026-10-13 · 집안일 CRUD API (F1)
 - **커밋**: 다음 기록 때 채움
+- **범위**: server
+- **내용**: `/api/chores`에 목록·단건 GET, POST, PATCH, DELETE(soft delete)를 추가했다. DB는 snake_case, API JSON은 camelCase alias(사용자 결정)이며 시각은 UTC 오프셋 포함으로 응답한다. 서버의 "오늘"은 설정 시간대(`AIFRED_TIMEZONE`, 기본 Asia/Seoul) 날짜로 계산한다.
+- **변경 파일**: `server/app/routers/__init__.py`, `server/app/routers/chores.py`, `server/app/schemas.py`, `server/app/clock.py`, `server/app/config.py`, `server/app/status.py`, `server/app/main.py`, `server/pyproject.toml`, `server/tests/conftest.py`, `server/tests/test_chores_api.py`
+- **검증**: pytest 73 passed (기존 httpx deprecation 경고 1건)
+- **리뷰**: APPROVE (결함 없음)
+- **남은 이슈**: POST는 모르는 필드를 무시함(PATCH만 거부); 잘못된 `AIFRED_TIMEZONE`은 요청 시점 500(시작 시 검증 권장); 빈 PATCH도 updatedAt 갱신(F8에서 재검토); 미래 lastDoneAt 허용; 린터(ruff 등) 미도입
+
+### 2026-10-13 · 집안일 상태 계산과 오늘 할 일 선택 (PRD 4장, F5)
+- **커밋**: dbec43c
 - **범위**: server | web
 - **내용**: PRD 4장(남은 일수·게이지·상태·배지)과 F5(오늘 할 일 선택·정렬) 계산을 web(TS)과 server(Python)에 같은 규칙으로 구현했다. 오늘 할 일은 남은 일수 ≤ 0(밀린 일 포함), 삭제된 집안일 제외, 남은 일수 오름차순 후 이름 오름차순 정렬. 양쪽 테스트가 공유 케이스 `shared/status-cases.json`(19케이스)을 읽는다. UI/API/DB는 범위 밖.
 - **변경 파일**: `shared/status-cases.json`, `web/src/lib/choreStatus.ts`, `web/src/lib/choreStatus.test.ts`, `server/app/status.py`, `server/tests/test_status.py`, `web/src/smoke.test.ts`(삭제, 실제 테스트로 대체)

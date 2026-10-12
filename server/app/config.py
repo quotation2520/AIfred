@@ -12,9 +12,14 @@ SERVER_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = SERVER_DIR / "data" / "aifred.db"
 
 
+DEFAULT_TIMEZONE = "Asia/Seoul"
+
+
 @dataclass(frozen=True)
 class Settings:
     db_path: Path
+    timezone: str = DEFAULT_TIMEZONE
+    """서버의 "오늘"을 정하는 IANA 시간대 이름"""
 
     @property
     def database_url(self) -> str:
@@ -23,7 +28,8 @@ class Settings:
 
 def load_settings() -> Settings:
     db_path = Path(os.environ.get("AIFRED_DB_PATH", str(DEFAULT_DB_PATH)))
-    return Settings(db_path=db_path)
+    timezone = os.environ.get("AIFRED_TIMEZONE", DEFAULT_TIMEZONE)
+    return Settings(db_path=db_path, timezone=timezone)
 
 
 settings = load_settings()

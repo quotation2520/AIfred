@@ -57,7 +57,7 @@ def status_of(remaining: int) -> StatusKind:
     return "overdue"
 
 
-def _sorted_active(chores: Iterable[ChoreLike], today: date) -> list[tuple[int, ChoreLike]]:
+def _sorted_active[C: ChoreLike](chores: Iterable[C], today: date) -> list[tuple[int, C]]:
     """삭제되지 않은 집안일을 남은 일수 오름차순, 같으면 이름 오름차순으로 정렬한다."""
     entries = [
         (remaining_days(c.last_done_at, c.interval_days, today), c)
@@ -66,6 +66,11 @@ def _sorted_active(chores: Iterable[ChoreLike], today: date) -> list[tuple[int, 
     ]
     entries.sort(key=lambda e: (e[0], e[1].name))
     return entries
+
+
+def sorted_by_urgency[C: ChoreLike](chores: Iterable[C], today: date) -> list[C]:
+    """삭제되지 않은 집안일을 긴급도 순서(남은 일수 오름차순, 같으면 이름 오름차순)로 돌려준다."""
+    return [c for _, c in _sorted_active(chores, today)]
 
 
 def todo_summary(chores: Iterable[ChoreLike], today: date) -> TodoSummary:
