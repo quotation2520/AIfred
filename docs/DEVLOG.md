@@ -1,6 +1,6 @@
 # AIFred 개발 일지
 
-작업 하나가 `developer → reviewer → logger` 순서를 거쳐 커밋될 때마다 logger가 항목을 추가한다. 최신 항목이 위에 온다.
+작업 하나가 `developer → reviewer → logger` 순서를 거쳐 커밋될 때마다 logger가 항목을 추가한다. 화면이 바뀌는 작업은 `developer → ux-designer → developer(피드백 반영) → reviewer → logger` 순서를 거친다. ux-designer 피드백은 `docs/ux/`에 남는다. 최신 항목이 위에 온다.
 
 ## 항목 템플릿
 
