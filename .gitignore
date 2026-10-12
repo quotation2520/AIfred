@@ -14,6 +14,13 @@ dev-dist/
 *.local
 *.log
 
+# 실행 화면 스크린샷 · Playwright 산출물 (web/에서 npm run screens)
+web/screenshots/
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/playwright/.cache/
+
 # 비밀값 · 로컬 데이터 (커밋 금지)
 .env
 .env.*

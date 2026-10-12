@@ -17,8 +17,26 @@
 
 ## 기록
 
-### 2026-10-13 · 대시보드와 집안일 추가·편집 화면 (F1, F2, F4, F5)
+### 2026-10-13 · 화면 스크린샷 도구 (`npm run screens`)
 - **커밋**: 다음 기록 때 채움
+- **범위**: web | infra
+- **내용**: ux-designer가 코드 없이 화면만 보고 피드백할 수 있도록 web에 `npm run screens`를 추가했다. Playwright + 설치된 Chrome으로 별도 포트 5174에서 앱을 띄우고, `/api`는 가짜 응답으로 가로채(실제 서버·DB 미사용) 시계를 2026-10-13 KST로 고정한 뒤 7개 시나리오 × 모바일/데스크톱 = PNG 14장을 `web/screenshots/`(git 제외)에 저장한다.
+- **변경 파일**: `web/package.json`, `web/package-lock.json`, `web/playwright.config.ts`, `web/screens/screens.pw.ts`, `web/screens/scenarios.ts`, `web/screens/sampleData.ts`, `web/screens/globalSetup.ts`, `web/screens/globalTeardown.ts`, `web/screens/paths.ts`, `web/tsconfig.screens.json`, `web/tsconfig.json`, `web/README.md`, `.gitignore`(screenshots·Playwright 산출물 제외)
+- **검증**: npm run screens 14 passed, npm test 64 passed, typecheck/lint/build 통과; 5173 dev 서버 유지·5174 정상 종료 확인
+- **리뷰**: APPROVE (결함 없음; `/api`만 가로채고 실제 서버로 새지 않음, 시계 고정이 로컬 날짜에 반영됨 확인)
+- **남은 이슈**: 모바일에서 고정 "+" 버튼이 카드 완료 버튼을 가림(ux-designer 확인 대상); 앱 문구가 바뀌면 캡처 시나리오도 같이 수정 필요; NO_COLOR/FORCE_COLOR 경고
+
+### 2026-10-13 · ux-designer 에이전트 추가와 화면 작업 흐름 정리
+- **커밋**: 58980bf
+- **범위**: infra
+- **내용**: 화면이 바뀌는 작업은 developer → ux-designer → developer → reviewer → logger 순서를 거치도록 했다. ux-designer는 코드를 읽지 않고 스크린샷과 앱 개요만으로 `docs/ux/`에 피드백을 남긴다.
+- **변경 파일**: `.claude/agents/ux-designer.md`, `.claude/agents/developer.md`, `.claude/agents/logger.md`, `docs/DEVLOG.md`
+- **검증**: 해당 없음 (코드 없음)
+- **리뷰**: 해당 없음 (프로세스 설정, 사용자 승인으로 직접 커밋)
+- **남은 이슈**: 없음
+
+### 2026-10-13 · 대시보드와 집안일 추가·편집 화면 (F1, F2, F4, F5)
+- **커밋**: 5f16558
 - **범위**: web | server
 - **내용**: web에 대시보드(F2/F4/F5)와 집안일 추가·편집 화면(F1)을 만들고 `/api/chores`에 연결했다. 완료 체크(F3) 버튼은 disabled 자리만 둔다. 리뷰에서 발견된 결함(주기 상한 없음으로 timedelta overflow 500) 수정으로 서버 스키마에 주기 ≤ 36500(`MAX_INTERVAL_DAYS`), lastDoneAt 2000-01-01~2100-12-31 범위 검증을 추가하고 web 폼에도 같은 검증을 넣었다.
 - **변경 파일**: `web/src/api/chores.ts`, `web/src/api/chores.test.ts`, `web/src/components/ChoreCard.tsx`, `web/src/components/Dashboard.tsx`, `web/src/components/ChoreForm.tsx`, `web/src/lib/formatDate.ts`, `web/src/lib/formatDate.test.ts`, `web/src/test/fetchMock.ts`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/index.css`, `web/package.json`, `web/package-lock.json`(dev 의존성 @testing-library/react, dom, user-event, jsdom 추가), `server/app/schemas.py`, `server/tests/test_chores_api.py`
