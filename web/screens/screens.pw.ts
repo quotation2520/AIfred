@@ -37,6 +37,10 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
         return route.fulfill(json(chores))
       }
       if (pathname === '/api/chores' && method === 'POST') {
+        if (scenario.createResponse) {
+          const { status, body, contentType = 'application/json' } = scenario.createResponse
+          return route.fulfill({ status, body, contentType })
+        }
         const input = request.postDataJSON() as Partial<ChoreRecord>
         const created: ChoreRecord = {
           icon: null,
@@ -77,6 +81,6 @@ for (const scenario of SCENARIOS) {
     await scenario.steps?.(page)
 
     const file = path.join(SCREENSHOT_DIR, `${scenario.name}-${testInfo.project.name}.png`)
-    await page.screenshot({ path: file, fullPage: true, animations: 'disabled', caret: 'hide' })
+    await page.screenshot({ path: file, fullPage: scenario.fullPage ?? true, animations: 'disabled', caret: 'hide' })
   })
 }

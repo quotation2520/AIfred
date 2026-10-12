@@ -10,6 +10,7 @@
   --color-primary: #2f6fde;
   --color-primary-text: #ffffff;
   --color-danger: #d1242f;
+  --color-danger-bg: #fff1f0;
 
   /* PRD 4장 상태별 색 */
   --color-ok: #2da44e;
@@ -17,11 +18,15 @@
   --color-today: #e8590c;
   --color-overdue: #d1242f;
   --color-overdue-bg: #fff1f0;
+  --color-overdue-stripe: #f7c6c4;
   --color-today-bg: #fff4e6;
   --color-gauge-track: #e6e9ed;
 
   --radius: 12px;
   --max-width: 640px;
+  --fab-size: 56px;
+  /* 하단 막대 높이: 위 여백 20px + "+" 버튼 + 아래 여백 12px */
+  --bottom-bar-height: calc(var(--fab-size) + 32px);
 
   color: var(--color-text);
   background: var(--color-bg);
@@ -35,6 +40,9 @@
 
 body {
   margin: 0;
+  /* 한국어가 단어 중간에서 줄바꿈되지 않게 한다 (UX U7). 아주 긴 단어만 예외로 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .app {
@@ -43,7 +51,12 @@ body {
 }
 
 main {
-  padding: 16px 16px 96px;
+  padding: 16px 16px 32px;
+}
+
+/* 하단 막대 아래에 마지막 카드가 가리지 않도록 막대 높이만큼 여백을 더 둔다 (UX U2). */
+main.dashboard {
+  padding-bottom: calc(var(--bottom-bar-height) + 24px + env(safe-area-inset-bottom, 0px));
 }
 
 /* 상단 요약 */
@@ -84,17 +97,60 @@ main {
   margin-top: 24px;
 }
 
-.status-message--error {
+/* 오류 상자 (UX U5): 짧은 제목, 다음 행동 안내, 작은 회색 기술 정보 */
+.error-notice {
+  padding: 16px;
+  border-radius: var(--radius);
+  border-left: 4px solid var(--color-danger);
+  background: var(--color-surface);
+}
+
+.error-notice p {
+  margin: 0;
+}
+
+.error-notice__title {
+  font-weight: 700;
   color: var(--color-danger);
 }
 
-.status-message--error p {
-  margin: 0 0 8px;
+.error-notice .error-notice__hint {
+  margin-top: 4px;
 }
 
-.status-message__detail {
-  font-size: 0.875rem;
+.error-notice .error-notice__detail {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--color-muted);
   overflow-wrap: anywhere;
+}
+
+.error-notice .button {
+  margin-top: 16px;
+}
+
+.dashboard__error {
+  margin-top: 24px;
+}
+
+/* 집안일 0개일 때 (UX U7) */
+.onboarding {
+  margin-top: 24px;
+  padding: 24px 16px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.onboarding__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.onboarding__text {
+  margin: 8px 0 16px;
+  color: var(--color-muted);
 }
 
 /* 카드 */
@@ -121,8 +177,10 @@ main {
   background: var(--color-today-bg);
 }
 
+/* 지연: 색 말고도 왼쪽 굵은 띠로 모양이 다르다 (UX U4). */
 .chore-card--overdue {
   border-color: var(--color-overdue);
+  border-left-width: 8px;
   background: var(--color-overdue-bg);
 }
 
@@ -188,11 +246,15 @@ main {
 
 .badge {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
   color: #ffffff;
+  white-space: nowrap;
 }
 
 .badge--ok {
@@ -210,6 +272,22 @@ main {
 
 .badge--overdue {
   background: var(--color-overdue);
+  padding-left: 4px;
+}
+
+/* 지연 배지 안의 동그란 "!" 표시 (UX U4) */
+.badge__alert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--color-overdue);
+  font-size: 0.85em;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .gauge {
@@ -234,28 +312,51 @@ main {
   background: var(--color-soon);
 }
 
-.chore-card--today .gauge__fill {
-  background: var(--color-today);
+/* 오늘·지연: 값은 0%지만 막대 자체가 상태를 보여 준다 (UX U8). */
+.chore-card--today .gauge {
+  background: transparent;
+  border: 2px solid var(--color-today);
 }
 
-.chore-card--overdue .gauge__fill {
-  background: var(--color-overdue);
+.chore-card--overdue .gauge {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-overdue) 0 4px,
+    var(--color-overdue-stripe) 4px 8px
+  );
 }
 
-/* + 버튼 */
-.fab {
+/* 하단 막대와 + 버튼 (UX U2) */
+.bottom-bar {
   position: fixed;
-  right: max(16px, calc((100vw - var(--max-width)) / 2 + 16px));
-  bottom: 24px;
-  width: 56px;
-  height: 56px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.bottom-bar__inner {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  max-width: var(--max-width);
+  height: var(--bottom-bar-height);
+  margin: 0 auto;
+  padding: 0 16px 12px;
+}
+
+.fab {
+  width: var(--fab-size);
+  height: var(--fab-size);
   border: 0;
   border-radius: 50%;
   background: var(--color-primary);
   color: var(--color-primary-text);
   font-size: 2rem;
   line-height: 1;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
   cursor: pointer;
 }
 
@@ -297,12 +398,10 @@ main {
   border-color: var(--color-danger);
 }
 
-.field__error,
-.form-error {
+.field__error {
   margin: 0;
   color: var(--color-danger);
   font-size: 0.875rem;
-  overflow-wrap: anywhere;
 }
 
 .form-actions {
@@ -314,7 +413,17 @@ main {
   flex: 1;
 }
 
+/* 삭제는 저장·취소 줄과 간격을 두고 구분선 아래에 둔다 (UX U10). */
+.form-danger-zone {
+  display: flex;
+  flex-direction: column;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
 .button {
+  min-height: 44px;
   padding: 10px 16px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -335,11 +444,13 @@ main {
   color: var(--color-primary-text);
 }
 
+.button--large {
+  min-height: 48px;
+  padding: 12px 24px;
+  font-weight: 600;
+}
+
 .button--danger {
   border-color: var(--color-danger);
   color: var(--color-danger);
-}
-
-.form-delete {
-  margin-top: 8px;
 }

@@ -1,14 +1,14 @@
 import { type FormEvent, useState } from 'react'
 import {
-  ApiError,
   type ChoreRecord,
   type ChoreUpdateInput,
   createChore,
   deleteChore,
-  formatDetail,
   newChoreId,
   updateChore,
 } from '../api/chores'
+import { deleteErrorText, type ErrorText, saveErrorText } from '../lib/errorMessages'
+import ErrorNotice from './ErrorNotice'
 
 interface ChoreFormProps {
   /** 편집할 집안일. 없으면 추가 모드다. */
@@ -28,8 +28,6 @@ interface FormValues {
 }
 
 type FieldErrors = Partial<Record<keyof FormValues, string>>
-
-const INTEGER_RE = /^\d+$/
 
 /** 주기 상한(100년). 서버 server/app/schemas.py의 MAX_INTERVAL_DAYS와 같은 값이다. */
 export const MAX_INTERVAL_DAYS = 36500
@@ -56,9 +54,15 @@ function initialValues(chore: ChoreRecord | undefined, today: string): FormValue
 function validate(values: FormValues): FieldErrors {
   const errors: FieldErrors = {}
   if (!values.name.trim()) errors.name = '이름을 입력해 주세요.'
+  // 상황별로 짧게 안내한다 (UX U10). 숫자 칸이라 숫자가 아닌 입력은 빈 값으로 들어온다.
   const interval = values.intervalDays.trim()
-  if (!INTEGER_RE.test(interval) || Number(interval) < 1 || Number(interval) > MAX_INTERVAL_DAYS) {
-    errors.intervalDays = `주기는 1~${MAX_INTERVAL_DAYS}일 사이의 정수로 입력해 주세요.`
+  const intervalNumber = Number(interval)
+  if (!interval) {
+    errors.intervalDays = '주기를 입력해 주세요.'
+  } else if (!Number.isFinite(intervalNumber) || intervalNumber < 1 || intervalNumber > MAX_INTERVAL_DAYS) {
+    errors.intervalDays = `1~${MAX_INTERVAL_DAYS}일 사이로 입력해 주세요.`
+  } else if (!Number.isInteger(intervalNumber)) {
+    errors.intervalDays = '소수점 없이 일 단위로 입력해 주세요.'
   }
   if (!values.lastDoneAt) {
     errors.lastDoneAt = '마지막 수행일을 선택해 주세요.'
@@ -94,22 +98,24 @@ function changedFields(chore: ChoreRecord, values: FormValues): ChoreUpdateInput
   return changes
 }
 
-function submitErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.status === 422) return `입력값을 확인해 주세요: ${formatDetail(error.detail)}`
-    return `저장하지 못했어요 (${error.status}): ${formatDetail(error.detail)}`
-  }
-  if (error instanceof Error) return `저장하지 못했어요: ${error.message}`
-  return '저장하지 못했어요.'
+function isDirty(values: FormValues, initial: FormValues): boolean {
+  return (Object.keys(initial) as (keyof FormValues)[]).some((key) => values[key] !== initial[key])
 }
 
 /** F1 집안일 추가·편집 화면. */
 function ChoreForm({ chore, today, onDone, onCancel }: ChoreFormProps) {
   const isEdit = chore !== undefined
-  const [values, setValues] = useState<FormValues>(() => initialValues(chore, today))
+  const [initial] = useState<FormValues>(() => initialValues(chore, today))
+  const [values, setValues] = useState<FormValues>(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<ErrorText | null>(null)
   const [busy, setBusy] = useState(false)
+
+  function handleCancel() {
+    // 입력이 바뀐 상태에서만 묻는다 (UX U10).
+    if (isDirty(values, initial) && !window.confirm('작성 중인 내용을 버릴까요?')) return
+    onCancel()
+  }
 
   function setField(field: keyof FormValues, value: string) {
     setValues((prev) => ({ ...prev, [field]: value }))
@@ -143,25 +149,22 @@ function ChoreForm({ chore, today, onDone, onCancel }: ChoreFormProps) {
       }
       onDone()
     } catch (error) {
-      setSubmitError(submitErrorMessage(error))
+      setSubmitError(saveErrorText(error))
       setBusy(false)
     }
   }
 
   async function handleDelete() {
     if (!chore) return
-    if (!window.confirm(`"${chore.name}"을(를) 삭제할까요?`)) return
+    // 받침에 따라 바뀌는 조사를 쓰지 않는 문장 (UX U10).
+    if (!window.confirm(`'${chore.name}' 삭제할까요?`)) return
     setSubmitError(null)
     setBusy(true)
     try {
       await deleteChore(chore.id)
       onDone()
     } catch (error) {
-      setSubmitError(
-        error instanceof ApiError
-          ? `삭제하지 못했어요 (${error.status}): ${formatDetail(error.detail)}`
-          : '삭제하지 못했어요.',
-      )
+      setSubmitError(deleteErrorText(error))
       setBusy(false)
     }
   }
@@ -245,14 +248,10 @@ function ChoreForm({ chore, today, onDone, onCancel }: ChoreFormProps) {
           <textarea id="chore-note" rows={3} value={values.note} onChange={(e) => setField('note', e.target.value)} />
         </div>
 
-        {submitError && (
-          <p className="form-error" role="alert">
-            {submitError}
-          </p>
-        )}
+        {submitError && <ErrorNotice error={submitError} className="form-error" />}
 
         <div className="form-actions">
-          <button type="button" className="button button--secondary" onClick={onCancel} disabled={busy}>
+          <button type="button" className="button button--secondary" onClick={handleCancel} disabled={busy}>
             취소
           </button>
           <button type="submit" className="button button--primary" disabled={busy}>
@@ -261,9 +260,11 @@ function ChoreForm({ chore, today, onDone, onCancel }: ChoreFormProps) {
         </div>
 
         {isEdit && (
-          <button type="button" className="button button--danger form-delete" onClick={handleDelete} disabled={busy}>
-            삭제
-          </button>
+          <div className="form-danger-zone">
+            <button type="button" className="button button--danger" onClick={handleDelete} disabled={busy}>
+              삭제
+            </button>
+          </div>
         )}
       </form>
     </main>

@@ -144,7 +144,7 @@ export function selectTodayChores<T extends Chore>(chores: readonly T[], today: 
   )
 }
 
-/** "오늘 할 일 N개 · 밀린 일 M개"의 N(밀린 일 포함)과 M. */
+/** "오늘 할 일 N개 (밀린 일 M개 포함)"의 N(밀린 일 포함)과 M. */
 export function summarize(chores: readonly Chore[], today: string): TodoSummary {
   let todo = 0
   let overdue = 0

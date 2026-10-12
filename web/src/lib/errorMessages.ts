@@ -1,0 +1,48 @@
+/**
+ * 사용자에게 보여 줄 오류 문구 (UX U5).
+ * 첫 줄(title)은 짧게, 둘째 줄(hint)은 다음 행동을 한국어로 안내하고,
+ * 상태 코드와 서버 원문은 작은 보조 글씨(detail)로 내린다.
+ */
+
+import { ApiError, formatDetail } from '../api/chores'
+
+export interface ErrorText {
+  title: string
+  hint: string
+  detail: string
+}
+
+const CONNECTION_HINT = 'PC 서버가 켜져 있는지, 집 Wi-Fi에 연결돼 있는지 확인한 뒤'
+const MISSING_HINT = '이미 삭제된 집안일일 수 있어요. 취소를 눌러 목록을 다시 확인해 주세요.'
+
+/** 기술 정보: "오류 코드 500 · Internal Server Error" 또는 네트워크 오류 원문. */
+export function technicalDetail(error: unknown): string {
+  if (error instanceof ApiError) return `오류 코드 ${error.status} · ${formatDetail(error.detail)}`
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function statusOf(error: unknown): number | null {
+  return error instanceof ApiError ? error.status : null
+}
+
+export function loadErrorText(error: unknown): ErrorText {
+  return {
+    title: '목록을 불러오지 못했어요.',
+    hint: `${CONNECTION_HINT} 다시 시도해 주세요.`,
+    detail: technicalDetail(error),
+  }
+}
+
+export function saveErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `${CONNECTION_HINT} 다시 저장해 주세요.`
+  if (status === 422) hint = '입력한 값을 서버가 받지 않았어요. 입력 칸을 확인해 주세요.'
+  else if (status === 404) hint = MISSING_HINT
+  return { title: '저장하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
+export function deleteErrorText(error: unknown): ErrorText {
+  const hint = statusOf(error) === 404 ? MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
+  return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }
+}

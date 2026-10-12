@@ -17,8 +17,17 @@
 
 ## 기록
 
-### 2026-10-13 · 화면 스크린샷 도구 (`npm run screens`)
+### 2026-10-13 · UX 피드백 반영 (dashboard-v1)
 - **커밋**: 다음 기록 때 채움
+- **범위**: web | docs
+- **내용**: 화면 작업 흐름(developer → ux-designer → developer → reviewer → logger)을 처음 거친 건이다. ux-designer 피드백 `docs/ux/2026-10-13-dashboard-v1.md`의 U1~U5, U7~U10을 반영했다(U6은 F3로 이월). 사용자 결정에 따라 요약을 "오늘 할 일 N개 (밀린 일 M개 포함)"으로, 아래 영역을 중복 없는 "그 밖의 집안일"로 바꾸고(모두 오늘 할 일이면 숨김) PRD 6·7장 문구도 고쳤다. 앞으로 올 때 날짜를 다시 계산하는 `useToday`(U1), 불투명 하단 고정 막대 안의 "+"(U2), 오류 문구 한국어화(`errorMessages`, `ErrorNotice`)를 추가했다.
+- **변경 파일**: `web/src/lib/useToday.ts`, `web/src/lib/useToday.test.ts`, `web/src/lib/errorMessages.ts`, `web/src/lib/errorMessages.test.ts`, `web/src/components/ErrorNotice.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/components/Dashboard.tsx`, `web/src/components/ChoreCard.tsx`, `web/src/components/ChoreForm.tsx`, `web/src/index.css`, `web/src/lib/choreStatus.ts`(주석), `web/screens/scenarios.ts`, `web/screens/screens.pw.ts`, `web/screens/sampleData.ts`, `web/README.md`, `docs/PRD.md`, `docs/ux/2026-10-13-dashboard-v1.md`
+- **검증**: npm test 78 passed, typecheck/lint/build 통과, npm run screens 20 passed
+- **리뷰**: APPROVE (ux-designer 피드백 docs/ux/2026-10-13-dashboard-v1.md 반영, U6은 F3로 이월)
+- **남은 이슈**: server/app/status.py docstring에 옛 요약 문구가 남아 있음(F7에서 맞출 것); U2: 체크 버튼과 "+" 사이 세로 간격이 20px라 ux-designer 재검토 필요; 앞으로 올 때 목록을 다시 받지 않음(F8에서 결정); 취소 확인 회귀 테스트 2건 없음(바꿨다가 되돌린 뒤 취소, 저장 성공 뒤 확인 창 미표시); PRD 원본(Claude Docs) 동기화 필요; 참고: 주기 입력 "1e3"을 1000으로 받아들임, 빈 상태에서 "집안일 추가" 버튼과 하단 "+"가 함께 보임
+
+### 2026-10-13 · 화면 스크린샷 도구 (`npm run screens`)
+- **커밋**: d38a202
 - **범위**: web | infra
 - **내용**: ux-designer가 코드 없이 화면만 보고 피드백할 수 있도록 web에 `npm run screens`를 추가했다. Playwright + 설치된 Chrome으로 별도 포트 5174에서 앱을 띄우고, `/api`는 가짜 응답으로 가로채(실제 서버·DB 미사용) 시계를 2026-10-13 KST로 고정한 뒤 7개 시나리오 × 모바일/데스크톱 = PNG 14장을 `web/screenshots/`(git 제외)에 저장한다.
 - **변경 파일**: `web/package.json`, `web/package-lock.json`, `web/playwright.config.ts`, `web/screens/screens.pw.ts`, `web/screens/scenarios.ts`, `web/screens/sampleData.ts`, `web/screens/globalSetup.ts`, `web/screens/globalTeardown.ts`, `web/screens/paths.ts`, `web/tsconfig.screens.json`, `web/tsconfig.json`, `web/README.md`, `.gitignore`(screenshots·Playwright 산출물 제외)

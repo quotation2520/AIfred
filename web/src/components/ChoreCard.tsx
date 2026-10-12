@@ -9,18 +9,23 @@ interface ChoreCardProps {
   onOpen: (chore: ChoreRecord) => void
 }
 
-/** PRD 6장 카드: 아이콘 · 이름 · 게이지 바 · 배지 · 완료 체크 버튼(F3 전까지 비활성). */
+/**
+ * PRD 6장 카드: 아이콘 · 이름 · 게이지 바 · 배지 · 완료 체크 버튼(F3 전까지 비활성).
+ * 지연 카드는 색 말고도 배지의 경고 표시와 왼쪽 굵은 띠로 구분한다 (UX U4).
+ */
 function ChoreCard({ chore, today, onOpen }: ChoreCardProps) {
   const status = computeStatus(chore.lastDoneAt, chore.intervalDays, today)
   const gauge = Math.round(status.gaugePercent)
   const icon = chore.icon?.trim() || DEFAULT_ICON
+  const overdue = status.status === 'overdue'
+  const spoken = overdue ? `${status.badge} (${-status.remainingDays}일 지남)` : status.badge
 
   return (
     <li className={`chore-card chore-card--${status.status}`} data-status={status.status}>
       <button
         type="button"
         className="chore-card__main"
-        aria-label={`${chore.name} ${status.badge} 편집`}
+        aria-label={`${chore.name} ${spoken} 편집`}
         onClick={() => onOpen(chore)}
       >
         <span className="chore-card__icon" aria-hidden="true">
@@ -29,7 +34,14 @@ function ChoreCard({ chore, today, onOpen }: ChoreCardProps) {
         <span className="chore-card__body">
           <span className="chore-card__header">
             <span className="chore-card__name">{chore.name}</span>
-            <span className={`badge badge--${status.status}`}>{status.badge}</span>
+            <span className={`badge badge--${status.status}`}>
+              {overdue && (
+                <span className="badge__alert" aria-hidden="true">
+                  !
+                </span>
+              )}
+              <span className="badge__text">{status.badge}</span>
+            </span>
           </span>
           <span
             className="gauge"
