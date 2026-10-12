@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# 비밀값 · 로컬 데이터 (커밋 금지)
+.env
+.env.*
+*.pem
+*.key
+*.db
+*.sqlite3
+certs/
+
+# 에디터 · OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
