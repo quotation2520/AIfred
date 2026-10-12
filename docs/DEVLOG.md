@@ -1,6 +1,6 @@
 # AIFred 개발 일지
 
-작업 하나가 `developer → reviewer → logger` 순서를 거쳐 커밋될 때마다 logger가 항목을 추가한다. 화면이 바뀌는 작업은 `developer → ux-designer → developer(피드백 반영) → reviewer → logger` 순서를 거친다. ux-designer 피드백은 `docs/ux/`에 남는다. 최신 항목이 위에 온다.
+> 2026-10-13부터 이 일지는 더 쓰지 않는다. 이후 변경 이력은 `git log`의 커밋 메시지(무엇을, 왜, 검증 결과)로 남긴다. 아래는 그 이전 기록이다.
 
 ## 항목 템플릿
 
@@ -18,7 +18,7 @@
 ## 기록
 
 ### 2026-10-13 · UX 피드백 반영 (dashboard-v1)
-- **커밋**: 다음 기록 때 채움
+- **커밋**: ab8f241
 - **범위**: web | docs
 - **내용**: 화면 작업 흐름(developer → ux-designer → developer → reviewer → logger)을 처음 거친 건이다. ux-designer 피드백 `docs/ux/2026-10-13-dashboard-v1.md`의 U1~U5, U7~U10을 반영했다(U6은 F3로 이월). 사용자 결정에 따라 요약을 "오늘 할 일 N개 (밀린 일 M개 포함)"으로, 아래 영역을 중복 없는 "그 밖의 집안일"로 바꾸고(모두 오늘 할 일이면 숨김) PRD 6·7장 문구도 고쳤다. 앞으로 올 때 날짜를 다시 계산하는 `useToday`(U1), 불투명 하단 고정 막대 안의 "+"(U2), 오류 문구 한국어화(`errorMessages`, `ErrorNotice`)를 추가했다.
 - **변경 파일**: `web/src/lib/useToday.ts`, `web/src/lib/useToday.test.ts`, `web/src/lib/errorMessages.ts`, `web/src/lib/errorMessages.test.ts`, `web/src/components/ErrorNotice.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/components/Dashboard.tsx`, `web/src/components/ChoreCard.tsx`, `web/src/components/ChoreForm.tsx`, `web/src/index.css`, `web/src/lib/choreStatus.ts`(주석), `web/screens/scenarios.ts`, `web/screens/screens.pw.ts`, `web/screens/sampleData.ts`, `web/README.md`, `docs/PRD.md`, `docs/ux/2026-10-13-dashboard-v1.md`

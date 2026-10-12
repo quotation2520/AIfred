@@ -1,6 +1,6 @@
 ---
 name: ux-designer
-description: AIFred의 실행 화면 스크린샷과 developer가 쓴 앱 개요를 보고, 사용자 입장에서 개선점을 docs/ux/에 문서화하는 UX 리뷰 에이전트. 코드를 읽거나 수정하지 않는다. 화면이 바뀌는 작업에서 developer 구현 뒤, reviewer 전에 사용한다.
+description: AIFred의 실행 화면 스크린샷과 developer가 쓴 앱 개요를 보고, 사용자 입장에서 개선점을 docs/ux/에 문서화하는 UX 리뷰 에이전트. 코드를 읽거나 수정하지 않는다. 사용자가 UX 리뷰를 명시적으로 요청할 때만 사용한다.
 tools: Read, Write, Glob
 ---
 

@@ -6,19 +6,21 @@
 
 ```
 AIfred/
-├─ docs/          PRD, 개발 로그
+├─ docs/          PRD(원본), 요청·계획(user_request.md), UX 피드백(ux/)
+├─ shared/        server와 web 테스트가 함께 쓰는 상태 계산 케이스
 ├─ server/        Python 3.12 · FastAPI · SQLModel(SQLite)
-│  ├─ app/        main.py(API), config.py(설정), db.py(엔진·세션), models.py(Chore·Completion·Device)
+│  ├─ app/        main.py, routers/(API), schemas.py(camelCase 입출력), models.py, status.py, clock.py
 │  └─ tests/      pytest
 └─ web/           React · TypeScript · Vite · vite-plugin-pwa · Dexie
-   └─ src/        화면 코드와 vitest 테스트(*.test.ts)
+   ├─ src/        화면 코드와 vitest 테스트
+   └─ screens/    Playwright 스크린샷 시나리오 (web/README.md)
 ```
 
 ## 서버 (PowerShell)
 
 ```powershell
 cd server
-python -m venv .venv          # 또는: uv venv .venv --python 3.12
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
 # 실행 (http://127.0.0.1:8000/api/health)
@@ -33,6 +35,7 @@ python -m venv .venv          # 또는: uv venv .venv --python 3.12
 | 환경변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `AIFRED_DB_PATH` | `server/data/aifred.db` | SQLite DB 파일 경로 |
+| `AIFRED_TIMEZONE` | `Asia/Seoul` | 서버가 "오늘"을 계산하는 시간대 |
 
 비밀값(VAPID 키, 토큰 등)은 코드에 넣지 않고 환경변수 또는 `.env`(커밋 금지)로 주입한다.
 
@@ -47,4 +50,5 @@ npm test            # vitest
 npm run typecheck   # tsc
 npm run lint        # oxlint
 npm run build       # 프로덕션 빌드 (dist/)
+npm run screens     # 화면 스크린샷 (UX 리뷰용, web/README.md)
 ```
