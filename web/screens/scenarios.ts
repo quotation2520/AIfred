@@ -68,6 +68,22 @@ async function openLater(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: '접기' })).toBeVisible()
 }
 
+/**
+ * 카드 게이지를 마우스로 오른쪽으로 끈다. fraction은 게이지 폭 대비 끄는 거리(0.5면 주기의 절반만큼 남은 일수가 는다).
+ * 가로로 10px 넘게 움직여야 조절이 시작되므로 여러 단계로 나눠 움직인다. release가 false면 누른 채로 둔다.
+ */
+async function dragGauge(page: Page, name: string, fraction: number, { release }: { release: boolean }): Promise<void> {
+  const slider = page.getByRole('slider', { name: `${name} 남은 일수` })
+  const box = await slider.boundingBox()
+  if (!box) throw new Error(`${name} 게이지가 보이지 않는다`)
+  const startX = box.x + box.width * 0.25
+  const y = box.y + box.height / 2
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(startX + box.width * fraction, y, { steps: 10 })
+  if (release) await page.mouse.up()
+}
+
 /** 시나리오 목록. 새 화면·상태를 찍으려면 여기에 항목을 덧붙인다. */
 export const SCENARIOS: Scenario[] = [
   {
@@ -77,6 +93,14 @@ export const SCENARIOS: Scenario[] = [
       await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 3개 (밀린 일 2개 포함)')
       await expect(page.getByRole('heading', { name: '그 밖의 집안일' })).toBeVisible()
       await expect(page.getByRole('button', { name: '나중에 할 일 1개 더 보기' })).toBeVisible()
+    },
+  },
+  {
+    name: 'dashboard-later-closed',
+    description: '대시보드: 집안일 12개에서 "나중에 할 일"(남은 일수 7일 이상) 5개가 접힌 처음 상태(dashboard-later-open과 비교용)',
+    chores: LONG_CHORES,
+    steps: async (page) => {
+      await expect(page.getByRole('button', { name: '나중에 할 일 5개 더 보기' })).toHaveAttribute('aria-expanded', 'false')
     },
   },
   {
@@ -90,13 +114,59 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'dashboard-scrolled',
-    description: '대시보드: 집안일 12개를 중간까지 스크롤한 상태를 보이는 화면 그대로 캡처(하단 "+" 막대와 카드 위치 확인)',
+    description:
+      '대시보드: 집안일 12개("나중에 할 일" 펼침)를 중간까지 스크롤한 상태를 보이는 화면 그대로 캡처(하단 "+" 막대와 카드 위치 확인)',
     chores: LONG_CHORES,
     fullPage: false,
     steps: async (page) => {
       await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 3개 (밀린 일 2개 포함)')
+      // 접힌 상태에서는 페이지가 짧아 막대 아래로 지나가는 카드가 없으므로 펼친 뒤 스크롤한다.
+      await openLater(page)
       // 카드 경계가 막대 위쪽에 걸치도록 반 장 정도 어긋난 위치로 스크롤한다.
-      await page.evaluate(() => window.scrollTo(0, 330))
+      await page.evaluate(() => window.scrollTo(0, 430))
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(430)
+    },
+  },
+  {
+    name: 'dashboard-complete-toast',
+    description: '대시보드: 걸레질(D-Day)을 완료 체크한 직후. 카드가 그 밖의 집안일로 옮겨 가고 하단에 실행 취소 알림이 보임',
+    fullPage: false,
+    steps: async (page) => {
+      await page.getByRole('button', { name: '걸레질 완료 체크' }).click()
+      await expect(page.getByTestId('undo-toast')).toContainText('걸레질 완료')
+      await expect(page.getByRole('button', { name: '걸레질 오늘 완료함' })).toBeVisible()
+      await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 2개 (밀린 일 2개 포함)')
+    },
+  },
+  {
+    name: 'dashboard-complete-moved-later',
+    description:
+      '대시보드: 욕실 청소(D+2, 7일마다)를 완료 체크한 직후. 카드가 접힌 "나중에 할 일"로 들어가 알림에 "나중에 할 일로 이동"이 붙음',
+    fullPage: false,
+    steps: async (page) => {
+      await page.getByRole('button', { name: '욕실 청소 완료 체크' }).click()
+      await expect(page.getByTestId('undo-toast')).toContainText('욕실 청소 완료')
+      await expect(page.getByTestId('undo-toast')).toContainText('나중에 할 일로 이동')
+      await expect(page.getByRole('button', { name: '나중에 할 일 2개 더 보기' })).toBeVisible()
+    },
+  },
+  {
+    name: 'dashboard-gauge-dragging',
+    description: '대시보드: 분리수거(D-1, 4일마다) 게이지를 오른쪽으로 끌고 있는 도중(손을 떼기 전, 배지가 D-3 미리 보기)',
+    fullPage: false,
+    steps: async (page) => {
+      await dragGauge(page, '분리수거', 0.5, { release: false })
+      await expect(page.getByRole('slider', { name: '분리수거 남은 일수' })).toHaveAttribute('aria-valuenow', '3')
+      await expect(page.getByRole('button', { name: /^분리수거 4일마다 D-3 편집$/ })).toBeVisible()
+    },
+  },
+  {
+    name: 'dashboard-gauge-adjusted',
+    description: '대시보드: 분리수거 게이지를 끌어 놓은 직후. 카드가 D-3 자리로 옮겨 가고 "분리수거 → D-3" 실행 취소 알림이 보임',
+    fullPage: false,
+    steps: async (page) => {
+      await dragGauge(page, '분리수거', 0.5, { release: true })
+      await expect(page.getByTestId('undo-toast')).toContainText('분리수거 → D-3')
     },
   },
   {

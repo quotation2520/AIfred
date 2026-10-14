@@ -22,6 +22,8 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
   let chores: ChoreRecord[] = structuredClone(scenario.chores ?? SAMPLE_CHORES)
   let presets: PresetCategory[] = samplePresets()
   const now = new Date(FIXED_NOW).toISOString()
+  /** 완료 기록 id → 실행 취소 때 되돌릴 값 */
+  const completions = new Map<string, { choreId: string; previousLastDoneAt: string }>()
 
   /** 기본 목록 API(/api/presets, /api/preset-categories, /api/preset-items). 해당 경로가 아니면 null. */
   function handlePresets(method: string, pathname: string, readBody: () => unknown) {
@@ -109,6 +111,41 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
         } as ChoreRecord
         chores = [...chores, created]
         return route.fulfill(json(created, 201))
+      }
+      // 완료 체크: 마지막 수행일을 오늘로 올린다. 실행 취소: 완료 전 마지막 수행일로 되돌린다.
+      const completeMatch = /^\/api\/chores\/([^/]+)\/completions$/.exec(pathname)
+      if (completeMatch && method === 'POST') {
+        const choreId = decodeURIComponent(completeMatch[1])
+        const target = chores.find((c) => c.id === choreId)
+        if (!target) return route.fulfill(json({ detail: 'Chore not found' }, 404))
+        const input = request.postDataJSON() as { id: string }
+        const today = FIXED_NOW.slice(0, 10)
+        const saved: ChoreRecord = {
+          ...target,
+          lastDoneAt: target.lastDoneAt > today ? target.lastDoneAt : today,
+          updatedAt: now,
+        }
+        chores = chores.map((c) => (c.id === choreId ? saved : c))
+        completions.set(input.id, { choreId, previousLastDoneAt: target.lastDoneAt })
+        const completion = {
+          id: input.id,
+          choreId,
+          doneAt: now,
+          doneOn: today,
+          dueOn: today,
+          previousLastDoneAt: target.lastDoneAt,
+          deletedAt: null,
+        }
+        return route.fulfill(json({ completion, chore: saved }, 201))
+      }
+      const undoMatch = /^\/api\/completions\/([^/]+)$/.exec(pathname)
+      if (undoMatch && method === 'DELETE') {
+        const record = completions.get(decodeURIComponent(undoMatch[1]))
+        const target = record && chores.find((c) => c.id === record.choreId)
+        if (!record || !target) return route.fulfill(json({ detail: 'Completion not found' }, 404))
+        const restored: ChoreRecord = { ...target, lastDoneAt: record.previousLastDoneAt, updatedAt: now }
+        chores = chores.map((c) => (c.id === restored.id ? restored : c))
+        return route.fulfill(json(restored))
       }
       const presetResult = handlePresets(method, pathname, request.postDataJSON.bind(request))
       if (presetResult) return route.fulfill(presetResult)
