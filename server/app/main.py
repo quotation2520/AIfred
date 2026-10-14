@@ -1,11 +1,14 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
+from app.config import settings
 from app.db import create_db_and_tables
 from app.presets import seed_presets
 from app.routers import chores, completions, presets
+from app.web import mount_web
 
 
 @asynccontextmanager
@@ -17,12 +20,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="AIFred", lifespan=lifespan)
-app.include_router(chores.router)
-app.include_router(completions.router)
-app.include_router(presets.router)
-
-
-@app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def create_app(web_dist: Path | None = settings.web_dist) -> FastAPI:
+    application = FastAPI(title="AIFred", lifespan=lifespan)
+    application.include_router(chores.router)
+    application.include_router(completions.router)
+    application.include_router(presets.router)
+    application.add_api_route("/api/health", health, methods=["GET"])
+    # 웹은 / 전체를 받으므로 API 라우트를 모두 등록한 뒤 맨 마지막에 붙인다.
+    mount_web(application, web_dist)
+    return application
+
+
+app = create_app()

@@ -8,6 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        // 서비스 워커는 주소창 이동(navigation)에 캐시한 index.html을 준다.
+        // 같은 서버가 제공하는 /api 와 FastAPI 문서 화면은 그 대상에서 뺀다.
+        // (/api fetch 요청은 런타임 캐시가 없어 서비스 워커가 손대지 않는다.)
+        navigateFallbackDenylist: [/^\/api(\/|$)/, /^\/docs/, /^\/redoc/, /^\/openapi\.json/],
+      },
       manifest: {
         name: 'AIFred',
         short_name: 'AIFred',

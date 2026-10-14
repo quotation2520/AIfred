@@ -28,6 +28,8 @@ web/playwright/.cache/
 *.key
 *.db
 *.sqlite3
+server/data/dev.db
+server/logs/
 certs/
 
 # 에디터 · OS
