@@ -8,14 +8,14 @@ import {
   updateChore,
 } from '../api/chores'
 import { deleteErrorText, type ErrorText, saveErrorText } from '../lib/errorMessages'
-import type { Preset } from '../lib/presets'
+import type { PresetItem } from '../api/presets'
 import ErrorNotice from './ErrorNotice'
 
 interface ChoreFormProps {
   /** 편집할 집안일. 없으면 추가 모드다. */
   chore?: ChoreRecord
   /** 추가 모드에서 기본 목록에서 고른 항목. 이름, 아이콘, 주기를 채워 연다. 채워진 값은 "바뀐 입력"으로 보지 않는다. */
-  preset?: Pick<Preset, 'name' | 'icon' | 'intervalDays'>
+  preset?: Pick<PresetItem, 'name' | 'icon' | 'intervalDays'>
   today: string
   /** 저장/삭제가 끝났을 때 */
   onDone: () => void

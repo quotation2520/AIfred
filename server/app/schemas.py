@@ -135,6 +135,174 @@ class ChoreRead(CamelModel):
     deleted_at: UtcDatetime | None
 
 
+# --- 기본 집안일 목록 (routers/presets.py) ---
+
+PRESET_NAME_MAX_LENGTH = 50
+"""카테고리·항목 이름 길이 상한. web의 lib/presets.ts와 같은 값이다."""
+PRESET_EMOJI_MAX_LENGTH = 16
+"""이모지·아이콘 길이 상한(코드 포인트). ZWJ로 이은 이모지(👨‍👩‍👧 등)도 들어가는 넉넉한 값이다."""
+PRESET_NOTE_MAX_LENGTH = 200
+
+DEFAULT_CATEGORY_EMOJI = "📁"
+DEFAULT_ITEM_ICON = "🧹"
+
+
+def _clean_preset_name(value: str) -> str:
+    name = _clean_name(value)
+    if len(name) > PRESET_NAME_MAX_LENGTH:
+        raise ValueError(f"이름은 {PRESET_NAME_MAX_LENGTH}자 이하여야 한다")
+    return name
+
+
+def _clean_emoji(value: str | None, default: str) -> str:
+    """앞뒤 공백을 지운다. 비어 있으면 기본값을 쓴다."""
+    stripped = (value or "").strip()
+    if len(stripped) > PRESET_EMOJI_MAX_LENGTH:
+        raise ValueError(f"이모지는 {PRESET_EMOJI_MAX_LENGTH}자 이하여야 한다")
+    return stripped or default
+
+
+def _clean_note(value: str | None) -> str | None:
+    """앞뒤 공백을 지운다. 비어 있으면 메모 없음(null)이다."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    if len(stripped) > PRESET_NOTE_MAX_LENGTH:
+        raise ValueError(f"메모는 {PRESET_NOTE_MAX_LENGTH}자 이하여야 한다")
+    return stripped or None
+
+
+def _not_null(value: Any) -> Any:
+    if value is None:
+        raise ValueError("null로 바꿀 수 없는 필드다")
+    return value
+
+
+class PresetCategoryCreate(CamelModel):
+    id: str | None = None
+    name: str
+    emoji: str | None = Field(default=None, validate_default=True)
+    """없거나 비어 있으면 📁"""
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_id(value)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return _clean_preset_name(value)
+
+    @field_validator("emoji")
+    @classmethod
+    def _emoji(cls, value: str | None) -> str:
+        return _clean_emoji(value, DEFAULT_CATEGORY_EMOJI)
+
+
+class PresetCategoryUpdate(CamelModel):
+    """이름과 이모지만 바꿀 수 있다. 다른 필드(id, sortOrder 등)는 422로 거부한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    emoji: str | None = None
+
+    @field_validator("name", "emoji", mode="before")
+    @classmethod
+    def _required_not_null(cls, value: Any) -> Any:
+        return _not_null(value)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return _clean_preset_name(value)
+
+    @field_validator("emoji")
+    @classmethod
+    def _emoji(cls, value: str) -> str:
+        return _clean_emoji(value, DEFAULT_CATEGORY_EMOJI)
+
+
+class PresetItemCreate(CamelModel):
+    id: str | None = None
+    name: str
+    icon: str | None = Field(default=None, validate_default=True)
+    """없거나 비어 있으면 🧹"""
+    interval_days: IntervalDays
+    note: str | None = None
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_id(value)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return _clean_preset_name(value)
+
+    @field_validator("icon")
+    @classmethod
+    def _icon(cls, value: str | None) -> str:
+        return _clean_emoji(value, DEFAULT_ITEM_ICON)
+
+    @field_validator("note")
+    @classmethod
+    def _note(cls, value: str | None) -> str | None:
+        return _clean_note(value)
+
+
+class PresetItemUpdate(CamelModel):
+    """이름, 아이콘, 주기, 메모만 바꿀 수 있다. 메모는 null이나 빈 문자열로 지운다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    icon: str | None = None
+    interval_days: IntervalDays | None = None
+    note: str | None = None
+
+    @field_validator("name", "icon", "interval_days", mode="before")
+    @classmethod
+    def _required_not_null(cls, value: Any) -> Any:
+        return _not_null(value)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return _clean_preset_name(value)
+
+    @field_validator("icon")
+    @classmethod
+    def _icon(cls, value: str) -> str:
+        return _clean_emoji(value, DEFAULT_ITEM_ICON)
+
+    @field_validator("note")
+    @classmethod
+    def _note(cls, value: str | None) -> str | None:
+        return _clean_note(value)
+
+
+class PresetItemRead(CamelModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    icon: str
+    interval_days: int
+    note: str | None
+    is_builtin: bool
+
+
+class PresetCategoryRead(CamelModel):
+    id: str
+    name: str
+    emoji: str
+    is_builtin: bool
+    items: list[PresetItemRead]
+
+
 class CompletionCreate(CamelModel):
     """완료 체크 요청. id는 재시도에 안전하도록 클라이언트가 정한다."""
 

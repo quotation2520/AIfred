@@ -45,6 +45,40 @@ class Completion(SQLModel, table=True):
     """실행 취소 시각"""
 
 
+class PresetCategory(SQLModel, table=True):
+    """기본 집안일 목록의 분류. 처음 시작할 때 shared/presets.json으로 채우고(is_builtin), 이후에는 앱에서 편집한다."""
+
+    __tablename__ = "preset_category"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    name: str
+    emoji: str
+    sort_order: int
+    is_builtin: bool = False
+    """shared/presets.json으로 채운 행. 사용자가 고치거나 지울 수 있다"""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    deleted_at: datetime | None = None
+
+
+class PresetItem(SQLModel, table=True):
+    """기본 집안일 목록의 항목. 고르면 이름, 아이콘, 주기가 채워진 추가 폼이 열린다."""
+
+    __tablename__ = "preset_item"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    category_id: str = Field(foreign_key="preset_category.id", index=True)
+    name: str
+    icon: str
+    interval_days: int = Field(ge=1)
+    note: str | None = None
+    sort_order: int
+    is_builtin: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    deleted_at: datetime | None = None
+
+
 class Device(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     local_ip: str | None = None

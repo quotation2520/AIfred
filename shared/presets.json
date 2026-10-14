@@ -4,7 +4,6 @@
       "id": "kitchen",
       "name": "주방",
       "emoji": "🍳",
-      "optional": false,
       "items": [
         { "name": "설거지", "icon": "🍽️", "intervalDays": 1 },
         { "name": "음식물 쓰레기 버리기", "icon": "🥬", "intervalDays": 2, "note": "여름에는 매일 권장" },
@@ -21,7 +20,6 @@
       "id": "cleaning",
       "name": "청소",
       "emoji": "🧹",
-      "optional": false,
       "items": [
         { "name": "청소기 돌리기", "icon": "🧹", "intervalDays": 3 },
         { "name": "물걸레질", "icon": "🪣", "intervalDays": 7 },
@@ -35,7 +33,6 @@
       "id": "bathroom",
       "name": "욕실",
       "emoji": "🛁",
-      "optional": false,
       "items": [
         { "name": "욕실 청소", "icon": "🛁", "intervalDays": 7, "note": "바닥, 벽, 세면대" },
         { "name": "변기 청소", "icon": "🚽", "intervalDays": 7 },
@@ -48,7 +45,6 @@
       "id": "laundry",
       "name": "세탁",
       "emoji": "🧺",
-      "optional": false,
       "items": [
         { "name": "빨래", "icon": "👕", "intervalDays": 3 },
         { "name": "수건 빨래", "icon": "🧺", "intervalDays": 3 },
@@ -62,7 +58,6 @@
       "id": "trash",
       "name": "쓰레기",
       "emoji": "♻️",
-      "optional": false,
       "items": [
         { "name": "분리수거", "icon": "♻️", "intervalDays": 3, "note": "배출 요일이 정해져 있으면 그 주기로" },
         { "name": "일반 쓰레기 버리기", "icon": "🗑️", "intervalDays": 3 }
@@ -72,7 +67,6 @@
       "id": "living",
       "name": "생활·관리",
       "emoji": "🏠",
-      "optional": false,
       "items": [
         { "name": "화분 물주기", "icon": "🪴", "intervalDays": 7, "note": "식물마다 다름" },
         { "name": "장보기", "icon": "🛒", "intervalDays": 7 },
@@ -89,7 +83,6 @@
       "id": "pets",
       "name": "반려동물",
       "emoji": "🐾",
-      "optional": true,
       "items": [
         { "name": "밥그릇·물그릇 세척", "icon": "🐾", "intervalDays": 1 },
         { "name": "화장실 모래 정리", "icon": "🐈", "intervalDays": 1, "note": "전체 갈이는 따로 등록" },

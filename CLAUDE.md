@@ -29,6 +29,7 @@ npm run screens -- -g edit-form                                          # 시�
 
 - 서버 린터는 아직 없다.
 - PowerShell 5.1의 `Invoke-RestMethod`는 UTF-8 응답의 한글을 깨뜨려 보여 준다. 데이터 자체는 정상이다.
+- 개발 서버는 `--reload` 없이 띄운다. 켜 둔 채 server 코드를 고치면 재시작되면서 사용자 DB(`server/data/aifred.db`)에 스키마 변경과 초기 데이터가 바로 들어간다.
 - 한글이나 따옴표가 들어간 커밋 메시지는 파일에 써서 `git commit -F`로 넘긴다.
 
 ## 아키텍처
@@ -45,19 +46,20 @@ npm run screens -- -g edit-form                                          # 시�
 - 현재 시각과 오늘 날짜는 `clock.py`의 FastAPI 의존성(`get_now`, `get_today`)으로만 얻는다. 테스트는 `dependency_overrides`로 이 값을 고정한다. `tests/conftest.py`의 `client` 픽스처는 tmp_path SQLite를 쓰고 오늘을 2026-10-12로 고정한다.
 - 삭제는 soft delete(`deleted_at`)다. 나중에 동기화(F8)로 삭제를 전달하기 위해서다. id는 클라이언트가 지정할 수 있는 UUID다(오프라인 생성 대비).
 - 완료 기록(`routers/completions.py`): 완료하면 `due_on`(그때의 예정일)과 `previous_last_done_at`을 저장하고, chore의 `last_done_at`을 max(기존, done_on)로 올린다. 실행 취소는 soft delete이고, `last_done_at`을 max(previous_last_done_at, 남은 기록의 done_on)로 되돌린다. 이 규칙은 가장 최근 완료만 취소한다고 가정한다. 이력(F6)이나 동기화(F8)에서 오래된 기록을 취소할 수 있게 되면 다시 설계해야 한다. 웹은 완료할 때 `doneOn`을 보내지 않고 서버의 오늘을 쓴다.
+- 프리셋: `app/presets.py`의 `seed_presets()`는 preset_category가 삭제된 행까지 0행일 때만 `shared/presets.json`(원본 문서 `docs/chore_presets.md`)으로 채운다. 그래서 지운 기본 항목은 되살아나지 않는다. 이름 중복은 같은 카테고리 안의 항목끼리, 카테고리끼리 비교해 409를 낸다(trim, NFC, casefold). 길이 상한 `PRESET_*_MAX_LENGTH`는 schemas.py와 웹 `lib/presets.ts`에 같은 값으로 있다.
 - 같은 id로 다시 POST하면 기존 기록을 200으로 돌려준다(재시도에 안전).
 - 스키마 변경: 마이그레이션 도구가 없다. `db.py`의 `add_missing_columns()`가 시작할 때 없는 열을 추가한다. NOT NULL 열은 테이블이 비어 있을 때만 테이블을 다시 만들고, 행이 있으면 `SchemaUpgradeError`로 멈춘다.
 - 입력 범위는 서버(`schemas.py`)와 웹(`ChoreForm.tsx`)에 같은 값으로 들어 있다. 주기는 1~36500일, 마지막 수행일은 2000-01-01~2100-12-31이다. 이 범위가 없으면 날짜 계산이 overflow로 500을 낸다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
 ### 웹 구조
 - 라우터 없이 `App.tsx`의 상태로 화면을 오간다. 추가는 대시보드 → 기본 목록 선택(`PresetPicker`) → 추가 폼 순서다. 폼 취소는 선택 화면으로, 선택 화면 닫기는 대시보드로 간다. 편집은 카드에서 바로 폼으로 간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
-- 기본 집안일 목록은 `shared/presets.json`이다(원본 문서 `docs/chore_presets.md`, 읽는 곳 `lib/presets.ts`, 데이터 검증 `lib/presets.test.ts`). 등록된 이름과 같은 항목은 "추가됨"으로 막는다.
+- 기본 집안일 목록(프리셋)은 서버 DB에서 `GET /api/presets`(`api/presets.ts`)로 받는다. 선택 화면(`PresetPicker`)은 카테고리 아코디언이다. 펼침 상태는 localStorage `aifred.presetOpen`에 기억한다. "편집" 모드에서 카테고리와 항목을 고치거나 지운다. 추가·수정·삭제는 서버 응답을 받은 뒤 화면에 반영한다(409 가능). 등록된 집안일과 이름이 같은 항목은 "추가됨"으로 막는다(`presetNameKey`, 서버 name_key와 같은 규칙).
 - "그 밖의 집안일" 중 남은 일수가 `LATER_THRESHOLD_DAYS`(7, `lib/dashboardLayout.ts`) 이상인 것은 "나중에 할 일"로 접는다. 펼침 상태는 localStorage `aifred.laterOpen`에 기억하고, 읽지 못하면 접힌다. 요약 개수는 숨김과 관계없다.
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
 - 완료 체크와 게이지 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 둘 다 `UndoToast`로 실행 취소를 제공한다. 카드는 항상 정렬 위치에 있고, 위치가 바뀌면 `useFlip`이 이동 애니메이션을 준다. 이동 중인 카드는 250ms 동안 체크를 받지 않는다. 애니메이션 시간은 `lib/motion.ts`에 있고, `prefers-reduced-motion`이면 끈다.
 - 게이지(`GaugeSlider`)는 끌어서 잔여일을 0~주기로 고치는 슬라이더다. PATCH { lastDoneAt }로 저장하고 완료 기록은 만들지 않는다(보정). 가로로 10px 이상 움직여야 조절을 시작해서 세로 스크롤과 구분한다.
 - 폰은 HTTP(`http://<PC IP>:5173`)로 접속하므로 HTTPS 전용 브라우저 API(`crypto.randomUUID`, 서비스 워커, 클립보드 등)를 쓸 수 없다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
-- 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다. afterEach에서 localStorage를 비우므로, 접힌 카드까지 모두 보여야 하는 테스트는 `rememberLaterOpen()`을 쓴다.
+- 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다. 선택 화면을 여는 테스트는 `presetRoutes()`를 mockFetch 경로에 넣는다. afterEach에서 localStorage를 비우므로, 접힌 카드까지 모두 보여야 하는 테스트는 `rememberLaterOpen()`을 쓴다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.
 
 ### 아직 없는 것 (PRD 기준)

@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { ChoreRecord } from '../api/chores'
+import type { PresetCategory, PresetItem } from '../api/presets'
 
 export interface RecordedCall {
   method: string
@@ -28,6 +29,48 @@ export function mockFetch(routes: Record<string, Handler>) {
   })
   vi.stubGlobal('fetch', fetchMock)
   return { calls, fetchMock }
+}
+
+export function presetItem(
+  id: string,
+  name: string,
+  icon: string,
+  intervalDays: number,
+  extra: Partial<PresetItem> = {},
+): PresetItem {
+  return { id, name, icon, intervalDays, note: null, isBuiltin: true, ...extra }
+}
+
+export function presetCategory(
+  id: string,
+  name: string,
+  emoji: string,
+  items: PresetItem[],
+  extra: Partial<PresetCategory> = {},
+): PresetCategory {
+  return { id, name, emoji, isBuiltin: true, items, ...extra }
+}
+
+/** GET /api/presets가 돌려줄 작은 기본 목록 (서버 응답 형식) */
+export const SAMPLE_PRESETS: PresetCategory[] = [
+  presetCategory('cat-kitchen', '주방', '🍳', [
+    presetItem('item-dishes', '설거지', '🍽️', 1),
+    presetItem('item-fridge', '냉장고 정리', '🧊', 7, { note: '유통기한 확인' }),
+  ]),
+  presetCategory('cat-laundry', '세탁', '🧺', [
+    presetItem('item-laundry', '빨래', '👕', 3),
+    presetItem('item-bedding', '이불 빨래', '🛏️', 14),
+  ]),
+  presetCategory('cat-trash', '쓰레기', '♻️', [presetItem('item-recycle', '분리수거', '♻️', 3)]),
+  presetCategory('cat-living', '생활·관리', '🏠', [
+    presetItem('item-plant', '화분 물주기', '🪴', 7),
+    presetItem('item-shopping', '장보기', '🛒', 7),
+  ]),
+]
+
+/** 기본 목록 경로. mockFetch 경로에 펼쳐 넣는다. 응답은 JSON이라 매번 새 사본이다. */
+export function presetRoutes(presets: PresetCategory[] = SAMPLE_PRESETS): Record<string, Handler> {
+  return { 'GET /api/presets': () => jsonResponse(presets) }
 }
 
 export function record(

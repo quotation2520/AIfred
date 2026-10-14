@@ -75,6 +75,39 @@ export function adjustUndoErrorText(error: unknown): ErrorText {
   return { title: '실행 취소하지 못했어요.', hint, detail: technicalDetail(error) }
 }
 
+/** 기본 목록(선택 화면)을 불러오지 못함. "직접 입력"은 그대로 쓸 수 있다. */
+export function presetLoadErrorText(error: unknown): ErrorText {
+  return {
+    title: '기본 목록을 불러오지 못했어요.',
+    hint: `${CONNECTION_HINT} 다시 시도해 주세요. 목록 없이 "직접 입력"으로 추가할 수도 있어요.`,
+    detail: technicalDetail(error),
+  }
+}
+
+const PRESET_MISSING_HINT = '이미 삭제됐을 수 있어요. 화면을 닫았다가 다시 열어 목록을 확인해 주세요.'
+
+/** 기본 목록의 카테고리·항목 추가, 수정 실패. 409는 같은 이름이 이미 있을 때다. */
+export function presetSaveErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let title = '저장하지 못했어요.'
+  let hint = `${CONNECTION_HINT} 다시 저장해 주세요.`
+  if (status === 409) {
+    title = '이미 같은 이름이 있어요.'
+    hint = '다른 이름으로 바꿔 주세요.'
+  } else if (status === 422) {
+    hint = '입력한 값을 서버가 받지 않았어요. 입력 칸을 확인해 주세요.'
+  } else if (status === 404) {
+    hint = PRESET_MISSING_HINT
+  }
+  return { title, hint, detail: technicalDetail(error) }
+}
+
+/** 기본 목록의 카테고리·항목 삭제 실패 */
+export function presetDeleteErrorText(error: unknown): ErrorText {
+  const hint = statusOf(error) === 404 ? PRESET_MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
+  return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
 export function deleteErrorText(error: unknown): ErrorText {
   const hint = statusOf(error) === 404 ? MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
   return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }

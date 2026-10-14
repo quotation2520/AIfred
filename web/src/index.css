@@ -816,93 +816,278 @@ main.dashboard {
   width: 100%;
 }
 
-.preset-category {
-  margin-top: 24px;
-}
-
-.preset-category__title {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
-}
-
-/* 360px 폭에서 한 줄에 2개, 넓은 화면에서는 3~4개 */
-.preset-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+.preset-screen__header-actions {
+  display: flex;
+  flex: none;
   gap: 8px;
 }
 
-.preset-chip {
+.preset-screen__error {
+  margin-top: 16px;
+}
+
+/* 카테고리 아코디언: 머리줄(이모지, 이름, 항목 수) 아래로 항목이 한 줄에 하나씩 펼쳐진다. */
+.preset-categories {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preset-category {
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.preset-category__header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.preset-category__toggle {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  height: 100%;
-  min-height: 56px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 0;
+  background: none;
   font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    transform var(--motion-press) ease,
-    background-color var(--motion-press) ease;
+  transition: background-color var(--motion-press) ease;
 }
 
-.preset-chip:active:not(:disabled) {
-  transform: scale(0.97);
+.preset-category__toggle:active {
   background: rgb(0 0 0 / 4%);
 }
 
-.preset-chip__icon {
+.preset-category__emoji {
   flex: none;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   line-height: 1;
 }
 
-.preset-chip__text {
+.preset-category__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-category__count {
+  flex: none;
+  min-width: 1.6em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-gauge-track);
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.preset-category__chevron {
+  flex: none;
+  margin-left: auto;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--color-muted);
+  transition: transform var(--motion-state) ease;
+}
+
+.preset-category--open .preset-category__chevron {
+  transform: rotate(90deg);
+}
+
+/* 펼칠 때 살짝 내려오며 나타난다. 접힐 때는 PresetPicker가 반대로 움직인 뒤 뺀다. */
+.preset-category__body {
+  border-top: 1px solid var(--color-border);
+  animation: preset-open var(--motion-state) ease-out;
+}
+
+@keyframes preset-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.preset-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.preset-rows > li + li {
+  border-top: 1px solid var(--color-bg);
+}
+
+/* 한 줄 전체가 터치 영역이다(높이 48px). */
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px 6px 16px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.preset-row--pick,
+.preset-row--add {
+  cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+.preset-row--pick:active:not(:disabled),
+.preset-row--add:active {
+  background: rgb(0 0 0 / 4%);
+}
+
+.preset-row__content {
+  flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.preset-chip__name {
+.preset-row__icon {
+  flex: none;
+  width: 1.75rem;
+  font-size: 1.3rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.preset-row__name {
+  min-width: 0;
   font-weight: 600;
-  line-height: 1.3;
 }
 
-.preset-chip__interval,
-.preset-chip__added {
-  font-size: 0.8rem;
+.preset-row__interval,
+.preset-row__added {
+  flex: none;
+  font-size: 0.85rem;
   color: var(--color-muted);
 }
 
+.preset-row__added {
+  margin-left: auto;
+  font-weight: 700;
+}
+
 /* 이미 등록된 항목: 흐리게, 누를 수 없음 */
-.preset-chip--added {
+.preset-row--added {
   opacity: 0.45;
   cursor: default;
 }
 
-.preset-chip__added {
+.preset-row--add {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+/* 편집 모드의 수정·삭제 */
+.preset-action {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.preset-action:active {
+  background: rgb(0 0 0 / 5%);
+}
+
+.preset-action--danger {
+  color: var(--color-danger);
+}
+
+.preset-add-category {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.preset-add-category:active {
+  background: rgb(0 0 0 / 5%);
+}
+
+/* 목록 안에서 펼쳐지는 추가·수정 폼 */
+.preset-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  background: var(--color-surface);
+}
+
+.preset-categories + .preset-editor {
+  margin-top: 12px;
+  border-radius: var(--radius);
+}
+
+.preset-editor__title {
+  margin: 0;
   font-weight: 700;
 }
 
-.preset-optional {
-  margin-top: 24px;
+.preset-editor__row {
+  display: flex;
+  gap: 8px;
 }
 
-.preset-optional__toggle {
-  width: 100%;
+.preset-editor__row > .field:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.preset-editor__row > .field:first-child {
+  flex: none;
+  width: 5.5rem;
+}
+
+.preset-editor__emoji {
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.preset-editor__error {
+  border: 1px solid var(--color-border);
 }
 
 /* 움직임 줄이기 설정: 전환과 애니메이션을 끄고, 누름 축소도 하지 않는다.
-   카드 위치 이동(useFlip)과 알림 사라짐(UndoToast)은 스크립트에서 따로 끈다. */
+   카드 위치 이동(useFlip), 알림 사라짐(UndoToast), 기본 목록 카테고리 접힘(PresetPicker)은 스크립트에서 따로 끈다. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -915,7 +1100,6 @@ main.dashboard {
   .fab:active,
   .button:active,
   .chore-card__check:active,
-  .preset-chip:active,
   .later-toggle__label--arrived,
   .gauge-slider--active .gauge__thumb {
     transform: none !important;

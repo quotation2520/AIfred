@@ -1,4 +1,39 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ChoreRecord } from '../src/api/chores'
+import type { PresetCategory } from '../src/api/presets'
+
+const PRESETS_JSON = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'shared', 'presets.json')
+
+interface SeedCategory {
+  id: string
+  name: string
+  emoji: string
+  items: { name: string; icon: string; intervalDays: number; note?: string }[]
+}
+
+/**
+ * 가짜 GET /api/presets 응답. 서버가 처음 설치할 때 채우는 shared/presets.json을 서버 응답 형식(camelCase, id, isBuiltin)으로 바꾼다.
+ * 시나리오마다 새로 만들어 추가·수정·삭제가 다른 시나리오에 번지지 않게 한다.
+ */
+export function samplePresets(): PresetCategory[] {
+  const data = JSON.parse(readFileSync(PRESETS_JSON, 'utf-8')) as { categories: SeedCategory[] }
+  return data.categories.map((category) => ({
+    id: `preset-${category.id}`,
+    name: category.name,
+    emoji: category.emoji,
+    isBuiltin: true,
+    items: category.items.map((item, index) => ({
+      id: `preset-${category.id}-${index}`,
+      name: item.name,
+      icon: item.icon,
+      intervalDays: item.intervalDays,
+      note: item.note ?? null,
+      isBuiltin: true,
+    })),
+  }))
+}
 
 /** 캡처 기준 시각: 2026-10-13(화) 오전 9시 KST. 실행 날짜와 상관없이 같은 화면이 나온다. */
 export const FIXED_NOW = '2026-10-13T09:00:00+09:00'

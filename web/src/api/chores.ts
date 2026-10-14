@@ -84,7 +84,8 @@ async function readDetail(response: Response): Promise<unknown> {
   }
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
+/** fetch 래퍼. 본문이 있으면 JSON으로 보내고, 실패 응답은 ApiError로 던진다. api/presets.ts도 쓴다. */
+export async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, {
     ...init,
     headers: init?.body !== undefined ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,

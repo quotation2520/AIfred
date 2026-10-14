@@ -8,7 +8,7 @@ import { MAX_INTERVAL_DAYS, MAX_LAST_DONE_AT, MIN_LAST_DONE_AT } from './compone
 import { UNDO_TOAST_MS } from './components/Dashboard'
 import { LATER_OPEN_STORAGE_KEY, LATER_THRESHOLD_DAYS } from './lib/dashboardLayout'
 import { MOVE_MS } from './lib/motion'
-import { jsonResponse, mockFetch, record } from './test/fetchMock'
+import { jsonResponse, mockFetch, presetRoutes, record } from './test/fetchMock'
 
 const TODAY = '2026-10-14'
 
@@ -62,7 +62,7 @@ function waitDashboard() {
 }
 
 async function renderDashboard(chores = CHORES) {
-  const mock = mockFetch({ 'GET /api/chores': () => jsonResponse(chores) })
+  const mock = mockFetch({ 'GET /api/chores': () => jsonResponse(chores), ...presetRoutes() })
   render(<App today={TODAY} />)
   await waitDashboard()
   return mock
@@ -1065,6 +1065,7 @@ describe('집안일 추가', () => {
     const { calls } = mockFetch({
       'GET /api/chores': () => jsonResponse(CHORES),
       'POST /api/chores': (call) => jsonResponse({ ...(call.body as object), icon: null, note: null }, 201),
+      ...presetRoutes(),
     })
 
     await openAddForm(user)
@@ -1083,7 +1084,8 @@ describe('집안일 추가', () => {
     expect(screen.getByText('이름을 입력해 주세요.')).toBeTruthy()
     expect(screen.getByText('1~36500일 사이로 입력해 주세요.')).toBeTruthy()
 
-    expect(calls).toHaveLength(0)
+    // 선택 화면이 기본 목록을 불러온 것 말고는 요청이 없다.
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets'])
 
     await user.clear(screen.getByLabelText('이름'))
     await user.type(screen.getByLabelText('이름'), '  욕실 청소 ')
@@ -1093,8 +1095,8 @@ describe('집안일 추가', () => {
 
     await waitDashboard()
     // POST 다음에 대시보드가 목록을 다시 불러온다.
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/chores', 'GET /api/chores'])
-    const body = calls[0].body as Record<string, unknown>
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores', 'GET /api/chores'])
+    const body = calls[1].body as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['id', 'intervalDays', 'lastDoneAt', 'name'])
     expect(body).toMatchObject({ name: '욕실 청소', intervalDays: 14, lastDoneAt: TODAY })
     expect(body.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
@@ -1135,7 +1137,7 @@ describe('집안일 추가', () => {
     await user.type(screen.getByLabelText('주기 (일)'), '36501')
     await user.click(screen.getByRole('button', { name: '저장' }))
     expect(screen.getByText('1~36500일 사이로 입력해 주세요.')).toBeTruthy()
-    expect(calls).toHaveLength(0)
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
 
     await user.clear(screen.getByLabelText('주기 (일)'))
     await user.type(screen.getByLabelText('주기 (일)'), '36500')
@@ -1167,7 +1169,7 @@ describe('집안일 추가', () => {
       await user.click(screen.getByRole('button', { name: '저장' }))
       expect(screen.getByText(message)).toBeTruthy()
     }
-    expect(calls).toHaveLength(0)
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
 
     fireEvent.change(dateInput, { target: { value: '2100-12-31' } })
     await user.click(screen.getByRole('button', { name: '저장' }))
@@ -1258,61 +1260,29 @@ describe('집안일 추가', () => {
 })
 
 describe('기본 목록에서 고르기', () => {
-  /** 선택 화면의 항목 버튼. 이름 뒤에 주기("7일마다", "매일")와, 등록돼 있으면 "추가됨"이 붙는다. */
+  // 화면 자체(아코디언, 편집, 오류)는 components/PresetPicker.test.tsx에서 본다. 여기서는 추가 흐름만 본다.
+
+  /** 선택 화면의 항목 줄. 이름 뒤에 주기("7일마다", "매일")와, 등록돼 있으면 "추가됨"이 붙는다. */
   function presetButton(name: string): HTMLButtonElement {
     return screen.getByRole('button', { name: new RegExp(`^${name} (매일|\\d+일마다)( 추가됨)?$`) }) as HTMLButtonElement
   }
 
-  it('분류별 제목 아래에 항목을 아이콘, 이름, 주기와 함께 보여준다', async () => {
-    const user = userEvent.setup()
-    await renderDashboard([])
-    await openPicker(user)
+  /** 기본 목록을 받은 뒤 카테고리를 펼친다. */
+  async function expand(user: UserEvent, category: string) {
+    const toggle = await screen.findByRole('button', { name: new RegExp(`^${category} \\d+$`) })
+    if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle)
+  }
 
-    for (const name of ['주방', '청소', '욕실', '세탁', '쓰레기', '생활·관리']) {
-      expect(screen.getByRole('region', { name })).toBeTruthy()
-    }
-    const kitchen = screen.getByRole('region', { name: '주방' })
-    expect(kitchen.querySelector('h2')?.textContent).toBe('🍳 주방')
-    const dishes = within(kitchen).getByRole('button', { name: '설거지 매일' })
-    expect(dishes.querySelector('.preset-chip__icon')?.textContent).toBe('🍽️')
-    expect(dishes.querySelector('.preset-chip__interval')?.textContent).toBe('매일')
-    expect(within(kitchen).getByRole('button', { name: '냉장고 정리 7일마다' })).toBeTruthy()
-    // 반려동물(선택 분류)을 뺀 37개가 처음부터 보인다.
-    expect(document.querySelectorAll('.preset-chip')).toHaveLength(37)
-    expect(screen.getByRole('button', { name: '직접 입력' })).toBeTruthy()
-  })
-
-  it('반려동물 분류는 맨 아래에 접혀 있다가 펼쳐진다', async () => {
-    const user = userEvent.setup()
-    await renderDashboard([])
-    await openPicker(user)
-    expect(screen.queryByRole('region', { name: '반려동물' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /^밥그릇·물그릇 세척/ })).toBeNull()
-
-    const toggle = screen.getByRole('button', { name: '반려동물 항목 보기' })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    await user.click(toggle)
-    const pets = screen.getByRole('region', { name: '반려동물' })
-    expect(within(pets).getByRole('button', { name: '밥그릇·물그릇 세척 매일' })).toBeTruthy()
-    expect(within(pets).getByRole('button', { name: '목욕시키기 30일마다' })).toBeTruthy()
-    // 펼친 분류는 다른 분류들 뒤(맨 아래)에 있다.
-    const regions = screen.getAllByRole('region').map((r) => r.getAttribute('aria-labelledby'))
-    expect(regions[regions.length - 1]).toBe('preset-pets-heading')
-
-    const hide = screen.getByRole('button', { name: '반려동물 항목 숨기기' })
-    expect(hide.getAttribute('aria-expanded')).toBe('true')
-    await user.click(hide)
-    expect(screen.queryByRole('region', { name: '반려동물' })).toBeNull()
-  })
-
-  it('항목을 누르면 이름, 아이콘, 주기가 채워진 폼이 열리고, 저장하면 그 값으로 POST한다', async () => {
+  it('카테고리를 펼쳐 항목을 누르면 이름, 아이콘, 주기가 채워진 폼이 열리고, 저장하면 그 값으로 POST한다', async () => {
     const user = userEvent.setup()
     await renderDashboard([])
     const { calls } = mockFetch({
       'GET /api/chores': () => jsonResponse([]),
       'POST /api/chores': (call) => jsonResponse(call.body, 201),
+      ...presetRoutes(),
     })
     await openPicker(user)
+    await expand(user, '세탁')
     await user.click(presetButton('이불 빨래'))
 
     expect(screen.getByRole('heading', { name: '집안일 추가' })).toBeTruthy()
@@ -1324,8 +1294,8 @@ describe('기본 목록에서 고르기', () => {
 
     await user.click(screen.getByRole('button', { name: '저장' }))
     await waitDashboard()
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/chores', 'GET /api/chores'])
-    const body = calls[0].body as Record<string, unknown>
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores', 'GET /api/chores'])
+    const body = calls[1].body as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['icon', 'id', 'intervalDays', 'lastDoneAt', 'name'])
     expect(body).toMatchObject({ name: '이불 빨래', icon: '🛏️', intervalDays: 14, lastDoneAt: TODAY })
   })
@@ -1336,15 +1306,22 @@ describe('기본 목록에서 고르기', () => {
     const { calls } = mockFetch({
       'GET /api/chores': () => jsonResponse([]),
       'POST /api/chores': (call) => jsonResponse(call.body, 201),
+      ...presetRoutes(),
     })
     await openPicker(user)
+    await expand(user, '생활·관리')
     await user.click(presetButton('화분 물주기'))
     await user.clear(screen.getByLabelText('주기 (일)'))
     await user.type(screen.getByLabelText('주기 (일)'), '4')
     await user.type(screen.getByLabelText('메모 (선택)'), '베란다')
     await user.click(screen.getByRole('button', { name: '저장' }))
     await waitDashboard()
-    expect(calls[0].body).toMatchObject({ name: '화분 물주기', icon: '🪴', intervalDays: 4, note: '베란다' })
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({
+      name: '화분 물주기',
+      icon: '🪴',
+      intervalDays: 4,
+      note: '베란다',
+    })
   })
 
   it('이미 등록된 이름의 항목은 "추가됨"으로 흐리게 보이고 누를 수 없다. 삭제된 집안일은 세지 않는다', async () => {
@@ -1355,11 +1332,14 @@ describe('기본 목록에서 고르기', () => {
       record('z', '빨래', 3, TODAY, { deletedAt: '2026-10-13T00:00:00Z' }),
     ])
     await openPicker(user)
+    await expand(user, '주방')
+    await expand(user, '쓰레기')
+    await expand(user, '세탁')
 
     const dishes = presetButton('설거지')
     expect(dishes.disabled).toBe(true)
-    expect(dishes.className).toContain('preset-chip--added')
-    expect(dishes.querySelector('.preset-chip__added')?.textContent).toBe('추가됨')
+    expect(dishes.className).toContain('preset-row--added')
+    expect(dishes.querySelector('.preset-row__added')?.textContent).toBe('추가됨')
     // 앞뒤 공백은 무시하고 비교한다.
     expect(presetButton('분리수거').disabled).toBe(true)
     await user.click(dishes)
@@ -1367,7 +1347,7 @@ describe('기본 목록에서 고르기', () => {
 
     const laundry = presetButton('빨래')
     expect(laundry.disabled).toBe(false)
-    expect(laundry.querySelector('.preset-chip__added')).toBeNull()
+    expect(laundry.querySelector('.preset-row__added')).toBeNull()
   })
 
   it('직접 입력을 누르면 빈 폼이 열린다', async () => {
@@ -1382,17 +1362,19 @@ describe('기본 목록에서 고르기', () => {
     expect((screen.getByLabelText('마지막 수행일') as HTMLInputElement).value).toBe(TODAY)
   })
 
-  it('채워진 값만으로는 바뀐 것으로 보지 않아 묻지 않고, 폼 취소는 선택 화면, 선택 화면 닫기는 대시보드로 간다', async () => {
+  it('채워진 값만으로는 바뀐 것으로 보지 않아 묻지 않고, 폼 취소는 선택 화면(펼친 카테고리 그대로), 선택 화면 닫기는 대시보드로 간다', async () => {
     const user = userEvent.setup()
     const { calls } = await renderDashboard()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openPicker(user)
+    await expand(user, '생활·관리')
     await user.click(presetButton('장보기'))
     await user.click(screen.getByRole('button', { name: '취소' }))
     expect(confirm).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
 
-    // 채운 값을 고친 뒤 취소하면 묻는다.
+    // 선택 화면으로 돌아오면 목록을 다시 받고, 펼쳐 둔 카테고리는 그대로 펼쳐져 있다.
+    await screen.findByRole('region', { name: '생활·관리' })
     await user.click(presetButton('장보기'))
     await user.type(screen.getByLabelText('이름'), ' 2')
     await user.click(screen.getByRole('button', { name: '취소' }))

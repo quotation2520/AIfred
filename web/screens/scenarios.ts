@@ -25,6 +25,11 @@ export interface Scenario {
   /** 지정하면 POST /api/chores가 이 응답을 돌려준다(저장 실패 캡처용). */
   createResponse?: MockResponse
   /**
+   * 지정하면 GET /api/presets가 이 응답을 돌려준다(기본 목록 오류 캡처용).
+   * 없으면 shared/presets.json으로 만든 목록을 돌려주고, 기본 목록 추가·수정·삭제도 메모리에 반영한다.
+   */
+  presetsResponse?: MockResponse
+  /**
    * false면 전체 페이지 대신 지금 보이는 화면(뷰포트)만 찍는다. 기본값 true.
    * 전체 페이지 캡처에서는 화면 아래 고정 요소가 첫 화면 기준 위치에 찍히므로,
    * 스크롤한 상태의 고정 요소를 보여 줄 때 쓴다.
@@ -41,6 +46,13 @@ export interface Scenario {
 async function openPicker(page: Page): Promise<void> {
   await page.getByRole('button', { name: '집안일 추가', exact: true }).last().click()
   await expect(page.getByRole('heading', { name: '어떤 집안일을 추가할까요?' })).toBeVisible()
+}
+
+/** 선택 화면에서 카테고리 머리줄("🍳 주방 9")을 눌러 펼친다. */
+async function expandCategory(page: Page, name: string): Promise<void> {
+  const toggle = page.getByRole('button', { name: new RegExp(`^${name} \\d+$`) })
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 }
 
 /** 선택 화면에서 "직접 입력"을 눌러 빈 추가 폼을 연다. */
@@ -123,24 +135,67 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'add-picker',
-    description: '추가 첫 화면: "+"를 눌러 연 기본 목록(욕실 청소·화분 물주기 등은 "추가됨")',
-    steps: openPicker,
-  },
-  {
-    name: 'add-picker-pets',
-    description: '추가 첫 화면: 맨 아래 반려동물 분류를 펼친 상태',
+    description: '추가 첫 화면: "+"를 눌러 연 기본 목록(카테고리 7개가 모두 접힌 처음 상태)',
     steps: async (page) => {
       await openPicker(page)
-      await page.getByRole('button', { name: '반려동물 항목 보기' }).click()
-      await expect(page.getByRole('heading', { name: '반려동물' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '주방 9' })).toHaveAttribute('aria-expanded', 'false')
+    },
+  },
+  {
+    name: 'add-picker-open',
+    description: '추가 첫 화면: 욕실과 생활·관리를 펼쳐 항목이 한 줄씩 보이는 상태(욕실 청소·화분 물주기는 "추가됨")',
+    steps: async (page) => {
+      await openPicker(page)
+      await expandCategory(page, '욕실')
+      await expandCategory(page, '생활·관리')
+      await expect(page.getByRole('button', { name: '욕실 청소 7일마다 추가됨' })).toBeDisabled()
+    },
+  },
+  {
+    name: 'add-picker-new-item',
+    description: '추가 첫 화면: 주방을 펼치고 맨 아래 "+ 항목 추가"를 눌러 연 입력 폼',
+    steps: async (page) => {
+      await openPicker(page)
+      await expandCategory(page, '주방')
+      await page.getByRole('region', { name: '주방' }).getByRole('button', { name: '+ 항목 추가' }).click()
+      await expect(page.getByRole('form', { name: '항목 추가' })).toBeVisible()
+    },
+  },
+  {
+    name: 'add-picker-new-category',
+    description: '추가 첫 화면: 목록 맨 아래 "+ 카테고리 추가"를 눌러 연 입력 폼',
+    steps: async (page) => {
+      await openPicker(page)
+      await page.getByRole('button', { name: '+ 카테고리 추가' }).click()
+      await expect(page.getByRole('form', { name: '카테고리 추가' })).toBeVisible()
+    },
+  },
+  {
+    name: 'add-picker-edit',
+    description: '추가 첫 화면: "편집"을 켜고 주방을 펼쳐 카테고리·항목마다 수정·삭제가 보이는 상태',
+    steps: async (page) => {
+      await openPicker(page)
+      await page.getByRole('button', { name: '편집', exact: true }).click()
+      await expandCategory(page, '주방')
+      await expect(page.getByRole('button', { name: '설거지 수정' })).toBeVisible()
+    },
+  },
+  {
+    name: 'add-picker-error',
+    description: '추가 첫 화면: 기본 목록 API 500 오류(직접 입력은 그대로 보임)',
+    presetsResponse: { status: 500, body: 'Internal Server Error', contentType: 'text/plain' },
+    steps: async (page) => {
+      await openPicker(page)
+      await expect(page.getByRole('alert')).toContainText('기본 목록을 불러오지 못했어요.')
     },
   },
   {
     name: 'add-form-preset',
-    description: '추가 화면: 기본 목록에서 "이불 빨래"를 골라 값이 채워진 폼',
+    description: '추가 화면: 기본 목록의 세탁을 펼쳐 "이불 빨래"를 골라 값이 채워진 폼',
     chores: [],
     steps: async (page) => {
       await openPicker(page)
+      await expandCategory(page, '세탁')
       await page.getByRole('button', { name: /^이불 빨래 / }).click()
       await expect(page.getByRole('heading', { name: '집안일 추가' })).toBeVisible()
       await expect(page.getByLabel('이름')).toHaveValue('이불 빨래')

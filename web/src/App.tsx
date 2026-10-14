@@ -3,7 +3,7 @@ import type { ChoreRecord } from './api/chores'
 import ChoreForm from './components/ChoreForm'
 import Dashboard from './components/Dashboard'
 import PresetPicker from './components/PresetPicker'
-import type { Preset } from './lib/presets'
+import type { PresetItem } from './api/presets'
 import { useToday } from './lib/useToday'
 
 /**
@@ -13,7 +13,7 @@ import { useToday } from './lib/useToday'
 type Screen =
   | { kind: 'dashboard' }
   | { kind: 'pick'; takenNames: string[] }
-  | { kind: 'add'; takenNames: string[]; preset?: Preset }
+  | { kind: 'add'; takenNames: string[]; preset?: PresetItem }
   | { kind: 'edit'; chore: ChoreRecord }
 
 interface AppProps {
