@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PresetItem } from '../api/presets'
 import { ENTER_MS } from '../lib/motion'
 import { PRESET_OPEN_STORAGE_KEY } from '../lib/presets'
-import { jsonResponse, mockFetch, presetRoutes, SAMPLE_PRESETS } from '../test/fetchMock'
+import { jsonResponse, mockFetch, presetCategory, presetItem, presetRoutes, SAMPLE_PRESETS } from '../test/fetchMock'
 import PresetPicker from './PresetPicker'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -426,6 +426,54 @@ describe('편집 모드', () => {
 
     await user.click(screen.getByRole('button', { name: '완료' }))
     expect(screen.queryByRole('button', { name: '주방 카테고리 수정' })).toBeNull()
+  })
+
+  it('편집 모드의 줄은 이름이 한 칸을 다 쓰고, 주기·"추가됨"은 이름 아래 줄, 수정·삭제는 따로 묶인 큰 버튼이다 (U5)', async () => {
+    // jsdom은 레이아웃을 계산하지 않으므로 DOM 구조와 클래스만 확인한다.
+    const user = userEvent.setup()
+    await renderPicker({ takenNames: ['냉장고 정리'] })
+    await expand(user, '주방')
+    await enterEditMode(user)
+
+    const remove = screen.getByRole('button', { name: '냉장고 정리 삭제' })
+    const row = remove.closest('li') as HTMLElement
+    expect(row.className).toBe('preset-row preset-row--editing')
+    expect(Array.from(row.children).map((el) => el.className)).toEqual([
+      'preset-row__icon',
+      'preset-row__text',
+      'preset-row__actions',
+    ])
+    const text = row.querySelector('.preset-row__text') as HTMLElement
+    expect(Array.from(text.children).map((el) => el.className)).toEqual(['preset-row__name', 'preset-row__meta'])
+    expect(text.querySelector('.preset-row__name')?.textContent).toBe('냉장고 정리')
+    expect(text.querySelector('.preset-row__meta')?.textContent).toBe('7일마다추가됨')
+
+    const edit = screen.getByRole('button', { name: '냉장고 정리 수정' })
+    expect(edit.parentElement).toBe(remove.parentElement)
+    expect(edit.className).toBe('preset-action')
+    // 삭제는 모양이 다르다: 빨간 테두리 클래스와 휴지통 표시
+    expect(remove.className).toBe('preset-action preset-action--danger')
+    expect(remove.textContent).toBe('🗑 삭제')
+
+    // 카테고리 머리줄도 같은 버튼 묶음을 쓴다.
+    const categoryRemove = screen.getByRole('button', { name: '주방 카테고리 삭제' })
+    expect(categoryRemove.parentElement?.className).toBe('preset-row__actions')
+    expect(categoryRemove.textContent).toBe('🗑 삭제')
+  })
+
+  it('가운뎃점으로 이은 긴 이름은 가운뎃점 뒤에서 줄을 바꿀 수 있다', async () => {
+    const user = userEvent.setup()
+    const presets = [
+      presetCategory('cat-kitchen', '주방', '🍳', [presetItem('item-stove', '가스레인지·인덕션 청소', '🔥', 14)]),
+    ]
+    mockFetch(presetRoutes(presets))
+    render(<PresetPicker takenNames={[]} onPick={vi.fn()} onCustom={vi.fn()} onClose={vi.fn()} />)
+    await screen.findByRole('button', { name: '주방 1' })
+    await expand(user, '주방')
+    await enterEditMode(user)
+    const name = screen.getByRole('button', { name: '가스레인지·인덕션 청소 삭제' }).closest('li')?.querySelector('.preset-row__name')
+    expect(name?.textContent).toBe('가스레인지·인덕션 청소')
+    expect(name?.querySelectorAll('wbr')).toHaveLength(1)
   })
 
   it('항목 수정: 값이 채워진 폼에서 바뀐 필드만 PATCH하고 줄을 바로 고친다', async () => {

@@ -6,8 +6,10 @@ import {
   completeErrorText,
   deleteErrorText,
   loadErrorText,
+  restoreErrorText,
   saveErrorText,
   technicalDetail,
+  uncompleteErrorText,
   undoErrorText,
 } from './errorMessages'
 
@@ -59,5 +61,21 @@ describe('오류 문구', () => {
   it('삭제 오류도 404와 그 밖을 나눈다', () => {
     expect(deleteErrorText(new ApiError(404, 'x')).hint).toContain('이미 삭제된 집안일')
     expect(deleteErrorText(new TypeError('Failed to fetch')).hint).toContain('다시 삭제해 주세요.')
+  })
+
+  it('되살리기 오류는 404·409와 그 밖을 나눈다', () => {
+    expect(restoreErrorText(new ApiError(500, 'x')).title).toBe('실행 취소하지 못했어요.')
+    expect(restoreErrorText(new ApiError(500, 'x')).hint).toContain('삭제된 채로 남아 있어요.')
+    expect(restoreErrorText(new ApiError(404, 'x')).hint).toContain('이미 되살렸거나')
+    expect(restoreErrorText(new ApiError(409, 'x')).hint).toContain('이미 되살렸거나')
+  })
+
+  it('오늘 완료 취소 오류는 기록이 없을 때(404)를 따로 안내한다', () => {
+    expect(uncompleteErrorText(new TypeError('Failed to fetch'))).toEqual({
+      title: '완료를 취소하지 못했어요.',
+      hint: 'PC 서버가 켜져 있는지, 집 Wi-Fi에 연결돼 있는지 확인한 뒤 다시 눌러 주세요.',
+      detail: 'Failed to fetch',
+    })
+    expect(uncompleteErrorText(new ApiError(404, 'x')).hint).toContain('오늘 완료한 기록이 없어요.')
   })
 })

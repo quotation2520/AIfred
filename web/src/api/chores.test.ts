@@ -9,7 +9,9 @@ import {
   listChores,
   newChoreId,
   newCompletionId,
+  restoreChore,
   undoCompletion,
+  undoTodayCompletion,
   updateChore,
   uuidV4,
 } from './chores'
@@ -93,6 +95,29 @@ describe('chores API 클라이언트', () => {
       { method: 'DELETE', url: '/api/completions/x', body: undefined },
     ])
     expect(newCompletionId()).not.toBe(newCompletionId())
+  })
+
+  it('undoTodayCompletion은 오늘 완료를 DELETE하고, restoreChore는 되살리기를 POST한다. 둘 다 집안일을 돌려준다', async () => {
+    const chore = record('a b', '화분 물주기', 7, '2026-10-05')
+    const { calls } = mockFetch({
+      'DELETE /api/chores/a%20b/completions/today': () => jsonResponse(chore),
+      'POST /api/chores/a%20b/restore': () => jsonResponse(chore),
+    })
+    await expect(undoTodayCompletion('a b')).resolves.toEqual(chore)
+    await expect(restoreChore('a b')).resolves.toEqual(chore)
+    expect(calls).toEqual([
+      { method: 'DELETE', url: '/api/chores/a%20b/completions/today', body: undefined },
+      { method: 'POST', url: '/api/chores/a%20b/restore', body: undefined },
+    ])
+  })
+
+  it('오늘 완료가 없으면(404), 삭제 상태가 아니면(409) ApiError를 던진다', async () => {
+    mockFetch({
+      'DELETE /api/chores/a/completions/today': () => jsonResponse({ detail: '오늘 완료한 기록이 없다' }, 404),
+      'POST /api/chores/a/restore': () => jsonResponse({ detail: '삭제된 집안일이 아니다' }, 409),
+    })
+    expect(((await undoTodayCompletion('a').catch((e: unknown) => e)) as ApiError).status).toBe(404)
+    expect(((await restoreChore('a').catch((e: unknown) => e)) as ApiError).status).toBe(409)
   })
 })
 

@@ -266,3 +266,167 @@ def test_undo_for_deleted_chore_is_404(client):
     client.delete(f"/api/chores/{chore['id']}")
 
     assert client.delete(f"/api/completions/{DONE_ID}").status_code == 404
+
+
+# --- 오늘 완료 실행 취소 (DELETE /api/chores/{id}/completions/today) ---
+
+DONE_ID_3 = "2d8e3b1a-4c5f-4e7d-9a0b-9c8d7e6f5a4b"
+
+
+def undo_today(client, chore_id):
+    return client.delete(f"/api/chores/{chore_id}/completions/today")
+
+
+def test_undo_today_restores_last_done_at(client, clock, engine):
+    # PRD 4장 예시: 10/05 수행, 주기 7일. 10/12(D-Day)에 완료했다가 취소하면 10/05로 돌아간다.
+    chore = create_chore(client)
+    done = complete(client, chore["id"], id=DONE_ID)
+    clock.tick()
+
+    response = undo_today(client, chore["id"])
+
+    assert response.status_code == 200
+    restored = response.json()
+    assert set(restored) == CHORE_KEYS
+    assert restored["lastDoneAt"] == "2026-10-05"
+    assert restored["updatedAt"] != done["chore"]["updatedAt"]
+    assert client.get(f"/api/chores/{chore['id']}").json() == restored
+
+    [row] = completion_rows(engine, chore["id"])
+    assert row.deleted_at is not None
+    assert row.deleted_at.replace(tzinfo=timezone.utc) == clock.now
+
+
+def test_undo_today_without_completion_is_404(client):
+    chore = create_chore(client)
+
+    response = undo_today(client, chore["id"])
+
+    assert response.status_code == 404
+    assert client.get(f"/api/chores/{chore['id']}").json() == chore
+
+
+def test_undo_today_ignores_yesterday_completion(client, engine):
+    chore = create_chore(client)
+    set_today(date(2026, 10, 11))
+    complete(client, chore["id"], id=DONE_ID)
+    set_today(date(2026, 10, 12))
+
+    response = undo_today(client, chore["id"])
+
+    assert response.status_code == 404
+    assert client.get(f"/api/chores/{chore['id']}").json()["lastDoneAt"] == "2026-10-11"
+    [row] = completion_rows(engine, chore["id"])
+    assert row.deleted_at is None
+
+
+def test_undo_today_with_past_done_on_sent_today_is_404(client):
+    # 오늘 기록했어도 doneOn이 과거면 "오늘 완료"가 아니다(done_on 기준).
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID, doneOn="2026-10-11")
+
+    assert undo_today(client, chore["id"]).status_code == 404
+
+
+def test_undo_today_cancels_only_latest_of_same_day(client, clock, engine):
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID)  # 09:00, 10/05 → 10/12
+    clock.tick()
+    second = complete(client, chore["id"], id=DONE_ID_2)  # 09:01, 10/12 → 10/12
+    assert second["completion"]["previousLastDoneAt"] == "2026-10-12"
+    clock.tick()
+
+    restored = undo_today(client, chore["id"]).json()
+
+    # 첫 기록이 남아 있으므로 마지막 수행일은 오늘 그대로다
+    assert restored["lastDoneAt"] == "2026-10-12"
+    rows = {row.id: row for row in completion_rows(engine, chore["id"])}
+    assert rows[DONE_ID].deleted_at is None
+    assert rows[DONE_ID_2].deleted_at is not None
+
+    # 다시 누르면 남은 첫 기록이 취소된다
+    clock.tick()
+    restored = undo_today(client, chore["id"]).json()
+    assert restored["lastDoneAt"] == "2026-10-05"
+    assert undo_today(client, chore["id"]).status_code == 404
+
+
+def test_undo_today_picks_latest_by_done_at_not_insert_order(client, clock, engine):
+    # 같은 날 기록 중 done_at이 가장 늦은 것을 고른다. id 순서와 무관하다.
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID_3)
+    clock.tick()
+    complete(client, chore["id"], id=DONE_ID)
+
+    assert undo_today(client, chore["id"]).status_code == 200
+
+    rows = {row.id: row for row in completion_rows(engine, chore["id"])}
+    assert rows[DONE_ID].deleted_at is not None
+    assert rows[DONE_ID_3].deleted_at is None
+
+
+def test_undo_today_skips_already_undone_record(client, clock, engine):
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID)
+    clock.tick()
+    complete(client, chore["id"], id=DONE_ID_2)
+    clock.tick()
+    # 가장 최근 기록은 id로 이미 취소했다
+    assert client.delete(f"/api/completions/{DONE_ID_2}").status_code == 200
+    clock.tick()
+
+    restored = undo_today(client, chore["id"]).json()
+
+    assert restored["lastDoneAt"] == "2026-10-05"
+    rows = {row.id: row for row in completion_rows(engine, chore["id"])}
+    assert rows[DONE_ID].deleted_at is not None
+    # 이미 취소된 기록의 취소 시각은 바뀌지 않는다
+    assert rows[DONE_ID_2].deleted_at.replace(tzinfo=timezone.utc) != clock.now
+
+
+def test_undo_today_after_only_undone_record_is_404(client):
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID)
+    client.delete(f"/api/completions/{DONE_ID}")
+
+    assert undo_today(client, chore["id"]).status_code == 404
+
+
+def test_undo_today_missing_or_deleted_chore_is_404(client):
+    assert undo_today(client, MISSING_ID).status_code == 404
+
+    chore = create_chore(client)
+    complete(client, chore["id"], id=DONE_ID)
+    client.delete(f"/api/chores/{chore['id']}")
+
+    assert undo_today(client, chore["id"]).status_code == 404
+
+
+def test_undo_today_does_not_touch_other_chore(client, engine):
+    chore = create_chore(client)
+    other = create_chore(client, name="걸레질")
+    complete(client, other["id"], id=DONE_ID)
+
+    assert undo_today(client, chore["id"]).status_code == 404
+    [row] = completion_rows(engine, other["id"])
+    assert row.deleted_at is None
+
+
+# --- 집안일 삭제 후 되살리기와 완료 기록 ---
+
+
+def test_restore_keeps_completions(client, engine):
+    # 삭제는 완료 기록을 건드리지 않으므로 되살리면 기록과 last_done_at이 그대로 이어진다.
+    chore = create_chore(client)
+    done = complete(client, chore["id"], id=DONE_ID)
+    client.delete(f"/api/chores/{chore['id']}")
+    [row] = completion_rows(engine, chore["id"])
+    assert row.deleted_at is None
+
+    restored = client.post(f"/api/chores/{chore['id']}/restore").json()
+
+    assert restored["lastDoneAt"] == done["chore"]["lastDoneAt"] == "2026-10-12"
+    [row] = completion_rows(engine, chore["id"])
+    assert row.deleted_at is None
+    # 되살린 뒤 오늘 완료를 취소할 수 있다
+    assert undo_today(client, chore["id"]).json()["lastDoneAt"] == "2026-10-05"

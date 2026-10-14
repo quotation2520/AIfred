@@ -1,15 +1,12 @@
-import { type FormEvent, useState } from 'react'
-import {
-  type ChoreRecord,
-  type ChoreUpdateInput,
-  createChore,
-  deleteChore,
-  newChoreId,
-  updateChore,
-} from '../api/chores'
-import { deleteErrorText, type ErrorText, saveErrorText } from '../lib/errorMessages'
+import { type FormEvent, useEffect, useState } from 'react'
+import { type ChoreRecord, type ChoreUpdateInput, createChore, newChoreId, updateChore } from '../api/chores'
+import { type ErrorText, saveErrorText } from '../lib/errorMessages'
 import type { PresetItem } from '../api/presets'
 import ErrorNotice from './ErrorNotice'
+import { SheetHeader } from './Sheet'
+
+/** 입력이 바뀐 상태에서 닫거나 취소할 때 묻는 문구 */
+export const DISCARD_CONFIRM_TEXT = '작성 중인 내용을 버릴까요?'
 
 interface ChoreFormProps {
   /** 편집할 집안일. 없으면 추가 모드다. */
@@ -17,9 +14,16 @@ interface ChoreFormProps {
   /** 추가 모드에서 기본 목록에서 고른 항목. 이름, 아이콘, 주기를 채워 연다. 채워진 값은 "바뀐 입력"으로 보지 않는다. */
   preset?: Pick<PresetItem, 'name' | 'icon' | 'intervalDays'>
   today: string
-  /** 저장/삭제가 끝났을 때 */
-  onDone: () => void
+  /** 저장이 끝났을 때. 서버가 돌려준 집안일이고, 편집에서 바뀐 것이 없어 보내지 않았으면 null이다. */
+  onSaved: (saved: ChoreRecord | null) => void
+  /** 취소: 들어온 곳으로 돌아간다(추가는 기본 목록, 편집은 대시보드). 입력이 바뀌었으면 먼저 묻는다. */
   onCancel: () => void
+  /** 머리줄 닫기(✕): 시트 전체를 닫는다. 바뀐 입력 확인은 받는 쪽이 한다(onDirtyChange로 알려 준다). */
+  onClose: () => void
+  /** 편집에서 머리줄 "삭제". 확인 창 없이 대시보드가 지우고 실행 취소 알림을 띄운다 (UX U2). */
+  onDelete?: (chore: ChoreRecord) => void
+  /** 입력이 처음 값과 달라졌는지 알려 준다. 닫기, 바깥 탭, 뒤로 가기에서 확인 창을 띄울지 정하는 데 쓴다. */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 interface FormValues {
@@ -113,18 +117,28 @@ function isDirty(values: FormValues, initial: FormValues): boolean {
   return (Object.keys(initial) as (keyof FormValues)[]).some((key) => values[key] !== initial[key])
 }
 
-/** F1 집안일 추가·편집 화면. */
-function ChoreForm({ chore, preset, today, onDone, onCancel }: ChoreFormProps) {
+/**
+ * F1 집안일 추가·편집 시트의 내용: 머리줄(제목, 편집이면 삭제, 닫기), 스크롤되는 입력 칸, 아래 취소/저장 줄.
+ * 저장 줄은 시트 맨 아래에 붙어 있어 폰 키보드가 올라와도 가려지지 않는다(index.html의 interactive-widget 설정).
+ * 삭제는 저장과 멀리 떨어진 머리줄에 둔다 (UX U2).
+ */
+function ChoreForm({ chore, preset, today, onSaved, onCancel, onClose, onDelete, onDirtyChange }: ChoreFormProps) {
   const isEdit = chore !== undefined
   const [initial] = useState<FormValues>(() => initialValues(chore, preset, today))
   const [values, setValues] = useState<FormValues>(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState<ErrorText | null>(null)
   const [busy, setBusy] = useState(false)
+  const dirty = isDirty(values, initial)
+
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+    return () => onDirtyChange?.(false)
+  }, [dirty, onDirtyChange])
 
   function handleCancel() {
     // 입력이 바뀐 상태에서만 묻는다 (UX U10).
-    if (isDirty(values, initial) && !window.confirm('작성 중인 내용을 버릴까요?')) return
+    if (dirty && !window.confirm(DISCARD_CONFIRM_TEXT)) return
     onCancel()
   }
 
@@ -140,16 +154,17 @@ function ChoreForm({ chore, preset, today, onDone, onCancel }: ChoreFormProps) {
     if (Object.keys(nextErrors).length > 0) return
 
     setBusy(true)
+    let saved: ChoreRecord | null = null
     try {
       if (chore) {
         const changes = changedFields(chore, values)
         if (Object.keys(changes).length > 0) {
-          await updateChore(chore.id, changes)
+          saved = await updateChore(chore.id, changes)
         }
       } else {
         const icon = optional(values.icon)
         const note = optional(values.note)
-        await createChore({
+        saved = await createChore({
           id: newChoreId(),
           name: values.name.trim(),
           intervalDays: Number(values.intervalDays.trim()),
@@ -158,110 +173,109 @@ function ChoreForm({ chore, preset, today, onDone, onCancel }: ChoreFormProps) {
           ...(note !== null && { note }),
         })
       }
-      onDone()
     } catch (error) {
       setSubmitError(saveErrorText(error))
       setBusy(false)
+      return
     }
+    onSaved(saved)
   }
 
-  async function handleDelete() {
-    if (!chore) return
-    // 받침에 따라 바뀌는 조사를 쓰지 않는 문장 (UX U10).
-    if (!window.confirm(`'${chore.name}' 삭제할까요?`)) return
-    setSubmitError(null)
-    setBusy(true)
-    try {
-      await deleteChore(chore.id)
-      onDone()
-    } catch (error) {
-      setSubmitError(deleteErrorText(error))
-      setBusy(false)
-    }
-  }
+  const deleteButton = chore && onDelete && (
+    <button
+      type="button"
+      className="sheet__header-button sheet__header-button--danger"
+      onClick={() => onDelete(chore)}
+      disabled={busy}
+    >
+      <span aria-hidden="true">🗑</span> 삭제
+    </button>
+  )
 
   return (
-    <main className="chore-form-screen">
-      <h1 className="form-title">{isEdit ? '집안일 편집' : '집안일 추가'}</h1>
-      <form className="chore-form" onSubmit={handleSubmit} noValidate>
-        <div className="field">
-          <label htmlFor="chore-name">이름</label>
-          <input
-            id="chore-name"
-            type="text"
-            value={values.name}
-            onChange={(e) => setField('name', e.target.value)}
-            placeholder="예: 화분 물주기"
-            aria-invalid={errors.name ? true : undefined}
-            aria-describedby={errors.name ? 'chore-name-error' : undefined}
-          />
-          {errors.name && (
-            <p id="chore-name-error" className="field__error">
-              {errors.name}
-            </p>
-          )}
+    <>
+      <SheetHeader title={isEdit ? '집안일 편집' : '집안일 추가'} actions={deleteButton} onClose={onClose} />
+      <form className="sheet__form" onSubmit={handleSubmit} noValidate>
+        <div className="sheet__body chore-form">
+          <div className="field">
+            <label htmlFor="chore-name">이름</label>
+            <input
+              id="chore-name"
+              type="text"
+              value={values.name}
+              onChange={(e) => setField('name', e.target.value)}
+              placeholder="예: 화분 물주기"
+              aria-invalid={errors.name ? true : undefined}
+              aria-describedby={errors.name ? 'chore-name-error' : undefined}
+            />
+            {errors.name && (
+              <p id="chore-name-error" className="field__error">
+                {errors.name}
+              </p>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="chore-interval">주기 (일)</label>
+            <input
+              id="chore-interval"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_INTERVAL_DAYS}
+              step={1}
+              value={values.intervalDays}
+              onChange={(e) => setField('intervalDays', e.target.value)}
+              placeholder="예: 7"
+              aria-invalid={errors.intervalDays ? true : undefined}
+              aria-describedby={errors.intervalDays ? 'chore-interval-error' : undefined}
+            />
+            {errors.intervalDays && (
+              <p id="chore-interval-error" className="field__error">
+                {errors.intervalDays}
+              </p>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="chore-last-done">마지막 수행일</label>
+            <input
+              id="chore-last-done"
+              type="date"
+              min={MIN_LAST_DONE_AT}
+              max={MAX_LAST_DONE_AT}
+              value={values.lastDoneAt}
+              onChange={(e) => setField('lastDoneAt', e.target.value)}
+              aria-invalid={errors.lastDoneAt ? true : undefined}
+              aria-describedby={errors.lastDoneAt ? 'chore-last-done-error' : undefined}
+            />
+            {errors.lastDoneAt && (
+              <p id="chore-last-done-error" className="field__error">
+                {errors.lastDoneAt}
+              </p>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="chore-icon">아이콘 (선택)</label>
+            <input
+              id="chore-icon"
+              type="text"
+              value={values.icon}
+              onChange={(e) => setField('icon', e.target.value)}
+              placeholder="예: 🪴"
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="chore-note">메모 (선택)</label>
+            <textarea id="chore-note" rows={3} value={values.note} onChange={(e) => setField('note', e.target.value)} />
+          </div>
+
+          {submitError && <ErrorNotice error={submitError} className="form-error" />}
         </div>
 
-        <div className="field">
-          <label htmlFor="chore-interval">주기 (일)</label>
-          <input
-            id="chore-interval"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={MAX_INTERVAL_DAYS}
-            step={1}
-            value={values.intervalDays}
-            onChange={(e) => setField('intervalDays', e.target.value)}
-            placeholder="예: 7"
-            aria-invalid={errors.intervalDays ? true : undefined}
-            aria-describedby={errors.intervalDays ? 'chore-interval-error' : undefined}
-          />
-          {errors.intervalDays && (
-            <p id="chore-interval-error" className="field__error">
-              {errors.intervalDays}
-            </p>
-          )}
-        </div>
-
-        <div className="field">
-          <label htmlFor="chore-last-done">마지막 수행일</label>
-          <input
-            id="chore-last-done"
-            type="date"
-            min={MIN_LAST_DONE_AT}
-            max={MAX_LAST_DONE_AT}
-            value={values.lastDoneAt}
-            onChange={(e) => setField('lastDoneAt', e.target.value)}
-            aria-invalid={errors.lastDoneAt ? true : undefined}
-            aria-describedby={errors.lastDoneAt ? 'chore-last-done-error' : undefined}
-          />
-          {errors.lastDoneAt && (
-            <p id="chore-last-done-error" className="field__error">
-              {errors.lastDoneAt}
-            </p>
-          )}
-        </div>
-
-        <div className="field">
-          <label htmlFor="chore-icon">아이콘 (선택)</label>
-          <input
-            id="chore-icon"
-            type="text"
-            value={values.icon}
-            onChange={(e) => setField('icon', e.target.value)}
-            placeholder="예: 🪴"
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="chore-note">메모 (선택)</label>
-          <textarea id="chore-note" rows={3} value={values.note} onChange={(e) => setField('note', e.target.value)} />
-        </div>
-
-        {submitError && <ErrorNotice error={submitError} className="form-error" />}
-
-        <div className="form-actions">
+        <div className="sheet__footer form-actions">
           <button type="button" className="button button--secondary" onClick={handleCancel} disabled={busy}>
             취소
           </button>
@@ -269,16 +283,8 @@ function ChoreForm({ chore, preset, today, onDone, onCancel }: ChoreFormProps) {
             저장
           </button>
         </div>
-
-        {isEdit && (
-          <div className="form-danger-zone">
-            <button type="button" className="button button--danger" onClick={handleDelete} disabled={busy}>
-              삭제
-            </button>
-          </div>
-        )}
       </form>
-    </main>
+    </>
   )
 }
 

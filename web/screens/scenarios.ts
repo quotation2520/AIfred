@@ -42,10 +42,16 @@ export interface Scenario {
   steps?: (page: Page) => Promise<void>
 }
 
-/** 하단 고정 "+" 버튼으로 기본 목록 선택 화면을 연다. 집안일 0개 화면에는 같은 이름의 버튼이 하나 더 있어 마지막 것을 쓴다. */
+/** 하단 고정 "+" 버튼으로 기본 목록 시트를 연다. 집안일 0개 화면에는 같은 이름의 버튼이 하나 더 있어 마지막 것을 쓴다. */
 async function openPicker(page: Page): Promise<void> {
   await page.getByRole('button', { name: '집안일 추가', exact: true }).last().click()
-  await expect(page.getByRole('heading', { name: '어떤 집안일을 추가할까요?' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '어떤 집안일을 추가할까요?' })).toBeVisible()
+}
+
+/** 카드 오른쪽 위 "⋯"로 편집·삭제 메뉴를 연다. */
+async function openCardMenu(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: `${name} 메뉴` }).click()
+  await expect(page.getByRole('dialog', { name })).toBeVisible()
 }
 
 /** 선택 화면에서 카테고리 머리줄("🍳 주방 9")을 눌러 펼친다. */
@@ -55,11 +61,11 @@ async function expandCategory(page: Page, name: string): Promise<void> {
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 }
 
-/** 선택 화면에서 "직접 입력"을 눌러 빈 추가 폼을 연다. */
+/** 기본 목록 시트에서 "직접 입력"을 눌러 같은 시트 안에 빈 추가 폼을 연다. */
 async function openAddForm(page: Page): Promise<void> {
   await openPicker(page)
   await page.getByRole('button', { name: '직접 입력' }).click()
-  await expect(page.getByRole('heading', { name: '집안일 추가' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '집안일 추가' })).toBeVisible()
 }
 
 /** 그 밖의 집안일 맨 아래 버튼으로 접힌 "나중에 할 일"(남은 일수 7일 이상)을 펼친다. */
@@ -134,7 +140,7 @@ export const SCENARIOS: Scenario[] = [
     steps: async (page) => {
       await page.getByRole('button', { name: '걸레질 완료 체크' }).click()
       await expect(page.getByTestId('undo-toast')).toContainText('걸레질 완료')
-      await expect(page.getByRole('button', { name: '걸레질 오늘 완료함' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '걸레질 오늘 완료함, 누르면 완료 취소' })).toBeVisible()
       await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 2개 (밀린 일 2개 포함)')
     },
   },
@@ -148,6 +154,40 @@ export const SCENARIOS: Scenario[] = [
       await expect(page.getByTestId('undo-toast')).toContainText('욕실 청소 완료')
       await expect(page.getByTestId('undo-toast')).toContainText('나중에 할 일로 이동')
       await expect(page.getByRole('button', { name: '나중에 할 일 2개 더 보기' })).toBeVisible()
+    },
+  },
+  {
+    name: 'dashboard-uncomplete-toast',
+    description:
+      '대시보드: 걸레질을 완료 체크한 뒤 초록 체크를 다시 눌러 오늘 완료를 취소한 직후. 카드가 오늘 할 일로 돌아오고 "걸레질 완료 취소" 알림이 보임',
+    fullPage: false,
+    steps: async (page) => {
+      await page.getByRole('button', { name: '걸레질 완료 체크' }).click()
+      const done = page.getByRole('button', { name: '걸레질 오늘 완료함, 누르면 완료 취소' })
+      await expect(done).toBeEnabled()
+      await done.click()
+      await expect(page.getByTestId('undo-toast')).toContainText('걸레질 완료 취소')
+      await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 3개 (밀린 일 2개 포함)')
+    },
+  },
+  {
+    name: 'dashboard-menu',
+    description: '대시보드: 욕실 청소 카드의 "⋯"를 눌러 연 편집·삭제 메뉴(폰은 아래에서 올라오는 목록, 넓은 화면은 작은 대화상자)',
+    fullPage: false,
+    steps: async (page) => {
+      await openCardMenu(page, '욕실 청소')
+      await expect(page.getByRole('dialog', { name: '욕실 청소' }).getByRole('button', { name: '삭제' })).toBeVisible()
+    },
+  },
+  {
+    name: 'dashboard-deleted-toast',
+    description: '대시보드: "⋯" 메뉴에서 욕실 청소를 삭제한 직후. 확인 창 없이 카드가 빠지고 "욕실 청소 삭제됨 | 실행 취소" 알림이 보임',
+    fullPage: false,
+    steps: async (page) => {
+      await openCardMenu(page, '욕실 청소')
+      await page.getByRole('dialog', { name: '욕실 청소' }).getByRole('button', { name: '삭제' }).click()
+      await expect(page.getByTestId('undo-toast')).toContainText('욕실 청소 삭제됨')
+      await expect(page.getByTestId('summary')).toHaveText('오늘 할 일 2개 (밀린 일 1개 포함)')
     },
   },
   {
@@ -205,7 +245,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'add-picker',
-    description: '추가 첫 화면: "+"를 눌러 연 기본 목록(카테고리 7개가 모두 접힌 처음 상태)',
+    description: '추가 시트: "+"를 눌러 대시보드 위에 연 기본 목록(카테고리 7개가 모두 접힌 처음 상태, 뒤 대시보드는 어둡게)',
     steps: async (page) => {
       await openPicker(page)
       await expect(page.getByRole('button', { name: '주방 9' })).toHaveAttribute('aria-expanded', 'false')
@@ -242,7 +282,8 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'add-picker-edit',
-    description: '추가 첫 화면: "편집"을 켜고 주방을 펼쳐 카테고리·항목마다 수정·삭제가 보이는 상태',
+    description:
+      '추가 시트: "편집"을 켜고 주방을 펼쳐 카테고리·항목마다 수정·삭제가 보이는 상태(이름은 두 줄까지, 주기·추가됨은 그 아래 줄)',
     steps: async (page) => {
       await openPicker(page)
       await page.getByRole('button', { name: '편집', exact: true }).click()
@@ -261,24 +302,24 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'add-form-preset',
-    description: '추가 화면: 기본 목록의 세탁을 펼쳐 "이불 빨래"를 골라 값이 채워진 폼',
+    description: '추가 시트: 기본 목록의 세탁을 펼쳐 "이불 빨래"를 골라 값이 채워진 폼(저장 줄은 시트 맨 아래)',
     chores: [],
     steps: async (page) => {
       await openPicker(page)
       await expandCategory(page, '세탁')
       await page.getByRole('button', { name: /^이불 빨래 / }).click()
-      await expect(page.getByRole('heading', { name: '집안일 추가' })).toBeVisible()
+      await expect(page.getByRole('dialog', { name: '집안일 추가' })).toBeVisible()
       await expect(page.getByLabel('이름')).toHaveValue('이불 빨래')
     },
   },
   {
     name: 'add-form',
-    description: '추가 화면: 선택 화면에서 "직접 입력"을 눌러 연 빈 폼',
+    description: '추가 시트: 기본 목록에서 "직접 입력"을 눌러 연 빈 폼',
     steps: openAddForm,
   },
   {
     name: 'add-form-errors',
-    description: '추가 화면: 빈 값으로 저장을 눌러 검증 오류가 보이는 상태',
+    description: '추가 시트: 빈 값으로 저장을 눌러 검증 오류가 보이는 상태',
     steps: async (page) => {
       await openAddForm(page)
       await page.getByRole('button', { name: '저장' }).click()
@@ -288,7 +329,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'add-form-save-error',
-    description: '추가 화면: 서버가 입력값을 거부(422)해 저장 실패 문구가 보이는 상태',
+    description: '추가 시트: 서버가 입력값을 거부(422)해 저장 실패 문구가 보이는 상태',
     createResponse: {
       status: 422,
       body: JSON.stringify({
@@ -305,11 +346,13 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'edit-form',
-    description: '편집 화면: 접힌 "나중에 할 일"을 펼쳐 냉장고 청소 카드를 눌러 연 상태',
+    description: '편집 시트: 접힌 "나중에 할 일"을 펼쳐 냉장고 청소 카드를 눌러 연 상태(머리줄에 삭제, 맨 아래 취소·저장)',
     steps: async (page) => {
       await openLater(page)
       await page.getByRole('button', { name: /^냉장고 청소 .* 편집$/ }).click()
-      await expect(page.getByRole('heading', { name: '집안일 편집' })).toBeVisible()
+      const sheet = page.getByRole('dialog', { name: '집안일 편집' })
+      await expect(sheet).toBeVisible()
+      await expect(sheet.getByRole('button', { name: '삭제' })).toBeVisible()
       await expect(page.getByLabel('이름')).toHaveValue('냉장고 청소')
     },
   },

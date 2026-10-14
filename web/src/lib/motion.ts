@@ -10,7 +10,17 @@ export const ENTER_MS = 200
 /** 실행 취소 알림이 사라질 때 시간(ms). index.css의 toast-out과 같다. */
 export const TOAST_EXIT_MS = 200
 
+/** 시트(추가·편집, 카드 메뉴)가 올라올 때 시간(ms). index.css의 --motion-sheet와 같다. */
+export const SHEET_ENTER_MS = 250
+/** 시트가 내려가며 닫힐 때 시간(ms) */
+export const SHEET_EXIT_MS = 200
+
 /** 사용자가 기기 설정에서 움직임 줄이기를 켰으면 true */
 export function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** 스크립트로 닫히는 움직임을 보여 줄 수 있으면 true. 움직임 줄이기 설정이나 animate가 없는 환경(jsdom)에서는 false다. */
+export function canAnimateExit(): boolean {
+  return !prefersReducedMotion() && typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.animate === 'function'
 }

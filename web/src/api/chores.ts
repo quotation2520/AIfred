@@ -118,6 +118,12 @@ export async function deleteChore(id: string): Promise<void> {
   await request(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+/** POST /api/chores/{id}/restore. 삭제한 집안일을 되살린다(삭제의 실행 취소). 없으면 404, 삭제된 상태가 아니면 409. */
+export async function restoreChore(id: string): Promise<ChoreRecord> {
+  const response = await request(`${BASE}/${encodeURIComponent(id)}/restore`, { method: 'POST' })
+  return (await response.json()) as ChoreRecord
+}
+
 /**
  * UUID v4. crypto.randomUUID는 HTTPS나 localhost에서만 있으므로,
  * 폰이 HTTP(http://<PC IP>:5173)로 접속할 때는 getRandomValues로 만든다.
@@ -174,6 +180,15 @@ export async function completeChore(choreId: string, input: CompleteChoreInput):
 /** DELETE /api/completions/{id}. 실행 취소. 마지막 수행일을 되돌린 집안일을 돌려준다. */
 export async function undoCompletion(id: string): Promise<ChoreRecord> {
   const response = await request(`/api/completions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return (await response.json()) as ChoreRecord
+}
+
+/**
+ * DELETE /api/chores/{choreId}/completions/today. 오늘 한 가장 최근 완료를 취소하고 갱신된 집안일을 돌려준다(UX U6).
+ * 오늘 완료한 기록이 없으면 404(게이지로 마지막 수행일을 오늘로 바꾼 경우 등).
+ */
+export async function undoTodayCompletion(choreId: string): Promise<ChoreRecord> {
+  const response = await request(`${BASE}/${encodeURIComponent(choreId)}/completions/today`, { method: 'DELETE' })
   return (await response.json()) as ChoreRecord
 }
 

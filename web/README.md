@@ -32,5 +32,5 @@ npm run screens
 ```
 
 - 샘플 데이터와 `chore()` 헬퍼는 `screens/sampleData.ts`에 있다.
-- 가짜 API(`screens/screens.pw.ts`)는 추가·수정·삭제를 메모리 목록에 반영하므로 저장 후 대시보드로 돌아가는 흐름도 찍을 수 있다.
+- 가짜 API(`screens/screens.pw.ts`)는 추가·수정·삭제를 메모리 목록에 반영하므로 저장 후 대시보드로 돌아가는 흐름도 찍을 수 있다. 삭제는 서버처럼 soft delete이고 되살리기(`POST /api/chores/{id}/restore`)를 받는다. 오늘 완료 취소(`DELETE /api/chores/{id}/completions/today`)는 그 시나리오 안에서 완료 체크한 기록만 취소할 수 있다(샘플 데이터만으로는 404).
 - 시나리오 하나만 찍기: `npm run screens -- -g edit-form` (이때도 폴더는 비워진다).

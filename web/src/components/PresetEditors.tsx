@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { type ErrorText, presetSaveErrorText } from '../lib/errorMessages'
 import {
   codePointLength,
@@ -128,18 +128,30 @@ function useSubmit<T>(validate: (values: T) => Errors<T>, save: (values: T) => P
   return { errors, submitError, busy, submit }
 }
 
+/** 입력이 처음 값과 달라졌는지 부모에게 알린다. 폼이 닫히면 false로 돌려놓는다. */
+function useReportDirty<T extends object>(values: T, initial: T, onDirtyChange?: (dirty: boolean) => void) {
+  const dirty = (Object.keys(initial) as (keyof T)[]).some((key) => values[key] !== initial[key])
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+    return () => onDirtyChange?.(false)
+  }, [dirty, onDirtyChange])
+}
+
 interface PresetItemEditorProps {
   label: string
   initial?: PresetItemValues
   onSave: (values: PresetItemValues) => Promise<void>
   onCancel: () => void
+  /** 입력이 처음 값과 달라졌는지. 뒤로 가기나 시트 닫기에서 확인 창을 띄울지 정한다. */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const EMPTY_ITEM: PresetItemValues = { name: '', icon: '', intervalDays: '', note: '' }
 
 /** 항목 추가·수정: 이름, 아이콘(이모지), 주기, 메모(선택) */
-export function PresetItemEditor({ label, initial = EMPTY_ITEM, onSave, onCancel }: PresetItemEditorProps) {
+export function PresetItemEditor({ label, initial = EMPTY_ITEM, onSave, onCancel, onDirtyChange }: PresetItemEditorProps) {
   const [values, setValues] = useState(initial)
+  useReportDirty(values, initial, onDirtyChange)
   const { errors, submitError, busy, submit } = useSubmit<PresetItemValues>(
     (v) => ({
       name: nameError(v.name),
@@ -218,13 +230,21 @@ interface PresetCategoryEditorProps {
   initial?: PresetCategoryValues
   onSave: (values: PresetCategoryValues) => Promise<void>
   onCancel: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const EMPTY_CATEGORY: PresetCategoryValues = { name: '', emoji: '' }
 
 /** 카테고리 추가·수정: 이름, 이모지 */
-export function PresetCategoryEditor({ label, initial = EMPTY_CATEGORY, onSave, onCancel }: PresetCategoryEditorProps) {
+export function PresetCategoryEditor({
+  label,
+  initial = EMPTY_CATEGORY,
+  onSave,
+  onCancel,
+  onDirtyChange,
+}: PresetCategoryEditorProps) {
   const [values, setValues] = useState(initial)
+  useReportDirty(values, initial, onDirtyChange)
   const { errors, submitError, busy, submit } = useSubmit<PresetCategoryValues>(
     (v) => ({ name: nameError(v.name), emoji: emojiError(v.emoji) }),
     onSave,

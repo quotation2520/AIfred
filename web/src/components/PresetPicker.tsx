@@ -16,8 +16,12 @@ import { type ErrorText, presetDeleteErrorText, presetLoadErrorText } from '../l
 import { formatInterval } from '../lib/formatDate'
 import { ENTER_MS, prefersReducedMotion } from '../lib/motion'
 import { loadOpenCategories, presetNameKey, saveOpenCategories } from '../lib/presets'
+import { useBackLayer } from '../lib/useBackLayer'
+import BreakableText from './BreakableText'
+import { DISCARD_CONFIRM_TEXT } from './ChoreForm'
 import ErrorNotice from './ErrorNotice'
 import { type PresetCategoryValues, PresetCategoryEditor, type PresetItemValues, PresetItemEditor } from './PresetEditors'
+import { SheetHeader } from './Sheet'
 
 interface PresetPickerProps {
   /** 이미 등록된(삭제되지 않은) 집안일 이름. 같은 이름의 항목은 "추가됨"으로 흐리게 보이고 누를 수 없다. */
@@ -26,8 +30,10 @@ interface PresetPickerProps {
   onPick: (preset: PresetItem) => void
   /** "직접 입력": 빈 추가 폼을 연다. */
   onCustom: () => void
-  /** 대시보드로 돌아간다. */
+  /** 머리줄 닫기(✕): 시트를 닫고 대시보드로 돌아간다. 작성 중인 입력 확인은 받는 쪽이 한다. */
   onClose: () => void
+  /** 작은 입력 폼에 입력한 내용이 있는지 알려 준다(시트 닫기 확인용). */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 type LoadState =
@@ -62,8 +68,11 @@ function itemValues(item: PresetItem): PresetItemValues {
  * "편집"을 켜면 카테고리와 항목(기본 항목 포함)마다 수정·삭제가 나오고, 항목을 눌러도 추가 폼으로 가지 않는다.
  *
  * 추가·수정·삭제는 서버 응답을 받은 뒤 화면에 반영한다(이름이 겹치면 409로 거절될 수 있어서).
+ *
+ * 시트 안의 내용이다(머리줄과 스크롤되는 본문). 편집 모드와 작은 입력 폼은 방문 기록에 한 층씩 쌓여서
+ * 뒤로 가기를 누르면 입력 폼 → 편집 모드 순서로 하나씩 닫힌다 (UX U3). 입력한 내용이 있으면 버릴지 묻는다.
  */
-function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerProps) {
+function PresetPicker({ takenNames, onPick, onCustom, onClose, onDirtyChange }: PresetPickerProps) {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set(loadOpenCategories()))
@@ -74,7 +83,26 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
   const [editMode, setEditMode] = useState(false)
   const [editor, setEditor] = useState<Editor>(null)
   const [actionError, setActionError] = useState<ErrorText | null>(null)
+  // 열린 작은 입력 폼에 입력한 내용이 있는지
+  const [editorDirty, setEditorDirty] = useState(false)
   const taken = new Set(takenNames.map(presetNameKey))
+
+  useEffect(() => {
+    onDirtyChange?.(editor !== null && editorDirty)
+  }, [editor, editorDirty, onDirtyChange])
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
+
+  // 뒤로 가기: 작은 입력 폼이 먼저, 그다음 편집 모드가 닫힌다(선언 순서 = 쌓이는 순서).
+  useBackLayer(editMode, () => {
+    setEditMode(false)
+    setEditor(null)
+    setActionError(null)
+  })
+  useBackLayer(editor !== null, () => {
+    if (editorDirty && !window.confirm(DISCARD_CONFIRM_TEXT)) return false
+    setEditor(null)
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -273,11 +301,50 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
             initial={itemValues(item)}
             onSave={(values) => saveItem(item, values)}
             onCancel={() => setEditor(null)}
+            onDirtyChange={setEditorDirty}
           />
         </li>
       )
     }
     const added = taken.has(presetNameKey(item.name))
+    if (editMode) {
+      // 편집 모드 (UX U5): 이름이 한 줄을 다 쓰고 단어 단위로 두 줄까지 보인다. 주기와 "추가됨"은 이름 아래 둘째 줄이다.
+      // 수정·삭제는 각각 44px 이상이고, 삭제는 테두리 모양과 휴지통 표시가 달라 수정과 구별된다.
+      return (
+        <li key={item.id} className="preset-row preset-row--editing">
+          <span className="preset-row__icon" aria-hidden="true">
+            {item.icon}
+          </span>
+          <span className="preset-row__text">
+            <span className="preset-row__name">
+              <BreakableText text={item.name} />
+            </span>
+            <span className="preset-row__meta">
+              <span className="preset-row__interval">{formatInterval(item.intervalDays)}</span>
+              {added && <span className="preset-row__added">추가됨</span>}
+            </span>
+          </span>
+          <span className="preset-row__actions">
+            <button
+              type="button"
+              className="preset-action"
+              aria-label={`${item.name} 수정`}
+              onClick={() => openEditor({ kind: 'edit-item', itemId: item.id })}
+            >
+              수정
+            </button>
+            <button
+              type="button"
+              className="preset-action preset-action--danger"
+              aria-label={`${item.name} 삭제`}
+              onClick={() => void removeItem(item)}
+            >
+              <span aria-hidden="true">🗑</span> 삭제
+            </button>
+          </span>
+        </li>
+      )
+    }
     const content = (
       <>
         <span className="preset-row__icon" aria-hidden="true">
@@ -293,29 +360,6 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
         )}
       </>
     )
-    if (editMode) {
-      return (
-        <li key={item.id} className="preset-row preset-row--editing">
-          <span className="preset-row__content">{content}</span>
-          <button
-            type="button"
-            className="preset-action"
-            aria-label={`${item.name} 수정`}
-            onClick={() => openEditor({ kind: 'edit-item', itemId: item.id })}
-          >
-            수정
-          </button>
-          <button
-            type="button"
-            className="preset-action preset-action--danger"
-            aria-label={`${item.name} 삭제`}
-            onClick={() => void removeItem(item)}
-          >
-            삭제
-          </button>
-        </li>
-      )
-    }
     return (
       <li key={item.id}>
         <button
@@ -343,6 +387,7 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
           initial={{ name: category.name, emoji: category.emoji }}
           onSave={(values) => saveCategory(category, values)}
           onCancel={() => setEditor(null)}
+          onDirtyChange={setEditorDirty}
         />
       ) : (
         <div className="preset-category__header">
@@ -364,7 +409,7 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
             </span>
           </button>
           {editMode && (
-            <>
+            <span className="preset-row__actions">
               <button
                 type="button"
                 className="preset-action"
@@ -379,9 +424,9 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
                 aria-label={`${category.name} 카테고리 삭제`}
                 onClick={() => void removeCategory(category)}
               >
-                삭제
+                <span aria-hidden="true">🗑</span> 삭제
               </button>
-            </>
+            </span>
           )}
         </div>
       )
@@ -405,6 +450,7 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
                     label="항목 추가"
                     onSave={(values) => saveNewItem(category, values)}
                     onCancel={() => setEditor(null)}
+                    onDirtyChange={setEditorDirty}
                   />
                 ) : (
                   <button
@@ -424,11 +470,12 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
   }
 
   return (
-    <main className="preset-screen">
-      <div className="preset-screen__header">
-        <h1 className="form-title">어떤 집안일을 추가할까요?</h1>
-        <div className="preset-screen__header-actions">
-          {state.kind === 'ready' && (
+    <>
+      <SheetHeader
+        title="어떤 집안일을 추가할까요?"
+        onClose={onClose}
+        actions={
+          state.kind === 'ready' && (
             <button
               type="button"
               className={`button${editMode ? ' button--primary' : ''}`}
@@ -436,60 +483,64 @@ function PresetPicker({ takenNames, onPick, onCustom, onClose }: PresetPickerPro
             >
               {editMode ? '완료' : '편집'}
             </button>
-          )}
-          <button type="button" className="button" onClick={onClose}>
-            닫기
-          </button>
-        </div>
-      </div>
-      <p className="preset-screen__hint">
-        {editMode
-          ? '카테고리와 항목을 고치거나 지울 수 있어요. 기본 항목도 바꿀 수 있어요.'
-          : '고르면 이름, 아이콘, 주기가 채워져요. 저장하기 전에 고칠 수 있어요.'}
-      </p>
-      <button type="button" className="button button--primary button--large preset-screen__custom" onClick={onCustom}>
-        직접 입력
-      </button>
-
-      {state.kind === 'loading' && (
-        <p className="status-message" role="status">
-          불러오는 중…
+          )
+        }
+      />
+      <div className="sheet__body preset-screen">
+        <p className="preset-screen__hint">
+          {editMode
+            ? '카테고리와 항목을 고치거나 지울 수 있어요. 기본 항목도 바꿀 수 있어요.'
+            : '고르면 이름, 아이콘, 주기가 채워져요. 저장하기 전에 고칠 수 있어요.'}
         </p>
-      )}
+        <button type="button" className="button button--primary button--large preset-screen__custom" onClick={onCustom}>
+          직접 입력
+        </button>
 
-      {state.kind === 'error' && (
-        <ErrorNotice error={state.error} className="preset-screen__error">
-          <button type="button" className="button button--primary button--large" onClick={retry}>
-            다시 시도
-          </button>
-        </ErrorNotice>
-      )}
+        {state.kind === 'loading' && (
+          <p className="status-message" role="status">
+            불러오는 중…
+          </p>
+        )}
 
-      {actionError && (
-        <ErrorNotice error={actionError} className="preset-screen__error">
-          <button type="button" className="button" onClick={() => setActionError(null)}>
-            닫기
-          </button>
-        </ErrorNotice>
-      )}
-
-      {state.kind === 'ready' && (
-        <>
-          <ul className="preset-categories">{state.categories.map(renderCategory)}</ul>
-          {editor?.kind === 'add-category' ? (
-            <PresetCategoryEditor label="카테고리 추가" onSave={saveNewCategory} onCancel={() => setEditor(null)} />
-          ) : (
-            <button
-              type="button"
-              className="preset-add-category"
-              onClick={() => openEditor({ kind: 'add-category' })}
-            >
-              + 카테고리 추가
+        {state.kind === 'error' && (
+          <ErrorNotice error={state.error} className="preset-screen__error">
+            <button type="button" className="button button--primary button--large" onClick={retry}>
+              다시 시도
             </button>
-          )}
-        </>
-      )}
-    </main>
+          </ErrorNotice>
+        )}
+
+        {actionError && (
+          <ErrorNotice error={actionError} className="preset-screen__error">
+            <button type="button" className="button" onClick={() => setActionError(null)}>
+              닫기
+            </button>
+          </ErrorNotice>
+        )}
+
+        {state.kind === 'ready' && (
+          <>
+            <ul className="preset-categories">{state.categories.map(renderCategory)}</ul>
+            {editor?.kind === 'add-category' ? (
+              <PresetCategoryEditor
+                label="카테고리 추가"
+                onSave={saveNewCategory}
+                onCancel={() => setEditor(null)}
+                onDirtyChange={setEditorDirty}
+              />
+            ) : (
+              <button
+                type="button"
+                className="preset-add-category"
+                onClick={() => openEditor({ kind: 'add-category' })}
+              >
+                + 카테고리 추가
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </>
   )
 }
 

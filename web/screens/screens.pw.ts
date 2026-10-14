@@ -92,7 +92,8 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
           const { status, body, contentType = 'application/json' } = scenario.listResponse
           return route.fulfill({ status, body, contentType })
         }
-        return route.fulfill(json(chores))
+        // 서버처럼 삭제한(soft delete) 집안일은 빼고 돌려준다.
+        return route.fulfill(json(chores.filter((c) => c.deletedAt == null)))
       }
       if (pathname === '/api/chores' && method === 'POST') {
         if (scenario.createResponse) {
@@ -116,7 +117,7 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
       const completeMatch = /^\/api\/chores\/([^/]+)\/completions$/.exec(pathname)
       if (completeMatch && method === 'POST') {
         const choreId = decodeURIComponent(completeMatch[1])
-        const target = chores.find((c) => c.id === choreId)
+        const target = chores.find((c) => c.id === choreId && c.deletedAt == null)
         if (!target) return route.fulfill(json({ detail: 'Chore not found' }, 404))
         const input = request.postDataJSON() as { id: string }
         const today = FIXED_NOW.slice(0, 10)
@@ -140,23 +141,51 @@ async function mockApi(page: Page, scenario: Scenario): Promise<void> {
       }
       const undoMatch = /^\/api\/completions\/([^/]+)$/.exec(pathname)
       if (undoMatch && method === 'DELETE') {
-        const record = completions.get(decodeURIComponent(undoMatch[1]))
+        const completionId = decodeURIComponent(undoMatch[1])
+        const record = completions.get(completionId)
         const target = record && chores.find((c) => c.id === record.choreId)
         if (!record || !target) return route.fulfill(json({ detail: 'Completion not found' }, 404))
+        completions.delete(completionId)
         const restored: ChoreRecord = { ...target, lastDoneAt: record.previousLastDoneAt, updatedAt: now }
         chores = chores.map((c) => (c.id === restored.id ? restored : c))
         return route.fulfill(json(restored))
       }
+      // 오늘 완료 취소(UX U6): 이 집안일의 가장 최근 완료 기록을 지우고 그 전 마지막 수행일로 되돌린다.
+      // 가짜 API의 완료 기록은 모두 "오늘"(FIXED_NOW) 것이다. 시나리오의 샘플처럼 기록 없이 마지막 수행일만 오늘이면 404다.
+      const todayMatch = /^\/api\/chores\/([^/]+)\/completions\/today$/.exec(pathname)
+      if (todayMatch && method === 'DELETE') {
+        const choreId = decodeURIComponent(todayMatch[1])
+        const latest = [...completions.entries()].reverse().find(([, record]) => record.choreId === choreId)
+        const target = chores.find((c) => c.id === choreId && c.deletedAt == null)
+        if (!target) return route.fulfill(json({ detail: 'Chore not found' }, 404))
+        if (!latest) return route.fulfill(json({ detail: '오늘 완료한 기록이 없다' }, 404))
+        completions.delete(latest[0])
+        const restored: ChoreRecord = { ...target, lastDoneAt: latest[1].previousLastDoneAt, updatedAt: now }
+        chores = chores.map((c) => (c.id === choreId ? restored : c))
+        return route.fulfill(json(restored))
+      }
+      // 삭제 되살리기(UX U2): 없으면 404, 삭제된 상태가 아니면 409
+      const restoreMatch = /^\/api\/chores\/([^/]+)\/restore$/.exec(pathname)
+      if (restoreMatch && method === 'POST') {
+        const choreId = decodeURIComponent(restoreMatch[1])
+        const target = chores.find((c) => c.id === choreId)
+        if (!target) return route.fulfill(json({ detail: 'Chore not found' }, 404))
+        if (target.deletedAt == null) return route.fulfill(json({ detail: '삭제된 집안일이 아니다' }, 409))
+        const restored: ChoreRecord = { ...target, deletedAt: null, updatedAt: now }
+        chores = chores.map((c) => (c.id === choreId ? restored : c))
+        return route.fulfill(json(restored))
+      }
       const presetResult = handlePresets(method, pathname, request.postDataJSON.bind(request))
       if (presetResult) return route.fulfill(presetResult)
-      const existing = id !== null ? chores.find((c) => c.id === id) : undefined
+      const existing = id !== null ? chores.find((c) => c.id === id && c.deletedAt == null) : undefined
       if (existing && method === 'PATCH') {
         const updated: ChoreRecord = { ...existing, ...(request.postDataJSON() as Partial<ChoreRecord>), updatedAt: now }
         chores = chores.map((c) => (c.id === id ? updated : c))
         return route.fulfill(json(updated))
       }
+      // 삭제는 서버처럼 soft delete다. 실행 취소(restore)로 되살릴 수 있다.
       if (existing && method === 'DELETE') {
-        chores = chores.filter((c) => c.id !== id)
+        chores = chores.map((c) => (c.id === id ? { ...c, deletedAt: now, updatedAt: now } : c))
         return route.fulfill({ status: 204, body: '' })
       }
       return route.fulfill(json({ detail: `가짜 API에 없는 요청: ${method} ${pathname}` }, 404))

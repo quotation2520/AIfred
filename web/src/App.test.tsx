@@ -7,7 +7,8 @@ import type { ChoreRecord } from './api/chores'
 import { MAX_INTERVAL_DAYS, MAX_LAST_DONE_AT, MIN_LAST_DONE_AT } from './components/ChoreForm'
 import { UNDO_TOAST_MS } from './components/Dashboard'
 import { LATER_OPEN_STORAGE_KEY, LATER_THRESHOLD_DAYS } from './lib/dashboardLayout'
-import { MOVE_MS } from './lib/motion'
+import { depthOf } from './lib/historyStack'
+import { MOVE_MS, SHEET_EXIT_MS } from './lib/motion'
 import { jsonResponse, mockFetch, presetRoutes, record } from './test/fetchMock'
 
 const TODAY = '2026-10-14'
@@ -21,13 +22,48 @@ const CHORES = [
   record('e', '분리수거', 7, '2026-10-01'), // -6, D+6
 ]
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   localStorage.clear()
+  // jsdom의 방문 기록은 테스트 사이에 남는다. 진행 중인 history.go가 끝나기를 기다린 뒤 깨끗한 주소로 되돌린다.
+  await settleHistory()
+  window.history.replaceState(null, '', '/')
 })
+
+/** jsdom의 history.go/back은 비동기(setImmediate 두 번)라서 popstate가 올 때까지 잠깐 기다린다. */
+function settleHistory(ms = 30) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 폰의 뒤로 가기 버튼. popstate와 그 뒤의 기록 맞추기가 끝날 때까지 기다린다. */
+async function pressBack() {
+  await act(async () => {
+    window.history.back()
+    await settleHistory()
+  })
+}
+
+/** 지금 방문 기록의 깊이(대시보드 = 0) */
+function depth(): number | null {
+  return depthOf(window.history.state)
+}
+
+/** 기본 목록을 받은 뒤 카테고리를 펼친다. */
+async function expand(user: UserEvent, category: string) {
+  const toggle = await screen.findByRole('button', { name: new RegExp(`^${category} \\d+$`) })
+  if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle)
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
 
 /** "나중에 할 일"(남은 일수 7일 이상)을 펼친 상태로 기억시켜 둔다. 카드가 모두 보여야 하는 테스트에서 쓴다. */
 function rememberLaterOpen() {
@@ -164,7 +200,7 @@ describe('대시보드', () => {
     expect(fill?.style.transform).toMatch(/^translateX\(-43\.33\d*%\)$/)
   })
 
-  it('이름 옆에 주기를 표시한다: 1일은 "매일", 나머지는 "N일마다"', async () => {
+  it('이름 아래 둘째 줄에 배지와 주기를 표시한다: 1일은 "매일", 나머지는 "N일마다"', async () => {
     rememberLaterOpen()
     await renderDashboard([
       record('a', '설거지', 1, '2026-10-14'),
@@ -174,25 +210,53 @@ describe('대시보드', () => {
     ])
     const others = section('그 밖의 집안일')
     const intervalOf = (name: string) => cardOf(others, name).querySelector('.chore-card__interval')?.textContent
-    expect(intervalOf('설거지')).toBe('· 매일')
-    expect(intervalOf('화분 물주기')).toBe('· 7일마다')
-    expect(intervalOf('이불 빨래')).toBe('· 14일마다')
-    // 이름과 주기는 따로 있어서 이름만 말줄임된다.
+    expect(intervalOf('설거지')).toBe('매일')
+    expect(intervalOf('화분 물주기')).toBe('7일마다')
+    expect(intervalOf('이불 빨래')).toBe('14일마다')
     const long = cardOf(others, '아주 아주 긴 이름의 집안일 베란다 창틀 먼지 닦기')
     expect(long.querySelector('.chore-card__name')?.textContent).toBe('아주 아주 긴 이름의 집안일 베란다 창틀 먼지 닦기')
-    expect(long.querySelector('.chore-card__interval')?.textContent).toBe('· 30일마다')
+    expect(long.querySelector('.chore-card__interval')?.textContent).toBe('30일마다')
     // 편집 버튼의 읽기용 이름에도 주기가 들어가고, "… 편집" 형태는 그대로다.
     expect(within(cardOf(others, '설거지')).getByRole('button', { name: '설거지 매일 D-1 편집' })).toBeTruthy()
     expect(within(cardOf(others, '이불 빨래')).getByRole('button', { name: /^이불 빨래 .* 편집$/ })).toBeTruthy()
   })
 
-  it('완료 체크 버튼이 켜져 있고, 카드에 편집 단서(">")가 있다', async () => {
+  it('폰에서 이름이 잘리지 않도록 이름은 윗줄을 혼자 쓰고, 배지·주기는 그 아래 줄, "⋯"는 편집 버튼 밖에 있다 (U1)', async () => {
+    // jsdom은 레이아웃을 계산하지 않으므로 DOM 구조와 클래스만 확인한다. 실제 줄바꿈(두 줄 + 말줄임)은 index.css가 맡는다.
+    // 14일마다, 9/28에 함 → 10/12 예정, D+2
+    await renderDashboard([record('a', '가스레인지·인덕션 청소', 14, '2026-09-28'), record('b', '냉장고 정리', 7, '2026-10-05')])
+    const card = cardOf(section('오늘 할 일'), '가스레인지·인덕션 청소')
+    const edit = within(card).getByRole('button', { name: /^가스레인지·인덕션 청소 14일마다 .* 편집$/ })
+    const text = edit.querySelector('.chore-card__text')
+    expect(Array.from(text?.children ?? []).map((el) => el.className)).toEqual(['chore-card__name', 'chore-card__meta'])
+    // 둘째 줄: 배지가 먼저, 그다음 주기
+    const meta = edit.querySelector('.chore-card__meta')
+    expect(Array.from(meta?.children ?? []).map((el) => el.className)).toEqual([
+      'badge badge--overdue',
+      'chore-card__interval',
+    ])
+    // 이름 칸에는 이름만 있다. 가운뎃점 뒤에서도 줄을 바꿀 수 있게 <wbr>이 들어가고, 글자는 그대로다.
+    const name = edit.querySelector('.chore-card__name')
+    expect(name?.textContent).toBe('가스레인지·인덕션 청소')
+    expect(name?.querySelectorAll('wbr')).toHaveLength(1)
+    expect(name?.querySelector('.badge, .chore-card__interval')).toBeNull()
+    // "⋯"는 편집 버튼 안이 아니라 카드의 따로 된 버튼이다.
+    const menu = within(card).getByRole('button', { name: '가스레인지·인덕션 청소 메뉴' })
+    expect(edit.contains(menu)).toBe(false)
+    expect(menu.className).toBe('chore-card__menu')
+    expect(menu.getAttribute('aria-haspopup')).toBe('dialog')
+    // 게이지와 체크는 그대로 있다.
+    expect(within(card).getByRole('slider', { name: '가스레인지·인덕션 청소 남은 일수' })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '가스레인지·인덕션 청소 완료 체크' })).toBeTruthy()
+  })
+
+  it('완료 체크 버튼이 켜져 있고, 카드 오른쪽 위에 "⋯" 메뉴 버튼이 있다(이전의 "›" 대신)', async () => {
     await renderDashboard()
     const card = cardOf(section('오늘 할 일'), '걸레질')
     const check = within(card).getByRole('button', { name: '걸레질 완료 체크' }) as HTMLButtonElement
     expect(check.disabled).toBe(false)
-    const edit = within(card).getByRole('button', { name: '걸레질 3일마다 D-Day 편집' })
-    expect(edit.querySelector('.chore-card__chevron')?.textContent).toBe('›')
+    expect(within(card).getByRole('button', { name: '걸레질 메뉴' }).textContent).toBe('⋯')
+    expect(card.querySelector('.chore-card__chevron')).toBeNull()
   })
 
   it('오늘 할 일이 없으면 빈 상태 문구를 보여준다', async () => {
@@ -300,7 +364,9 @@ describe('오늘 날짜 갱신 (U1)', () => {
     expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 2개 포함)')
     expect(within(section('오늘 할 일')).getByText('D+2')).toBeTruthy()
     expect(within(section('오늘 할 일')).getByText('D+1')).toBeTruthy()
-    expect(calls).toHaveLength(1)
+    // 다시 보일 때 30초 넘게 지났으면 목록도 조용히 다시 받는다(useChores). focus만으로는 받지 않는다.
+    expect(calls.every((c) => c.method === 'GET' && c.url === '/api/chores')).toBe(true)
+    expect(calls.length).toBeGreaterThanOrEqual(2)
   })
 })
 
@@ -309,14 +375,6 @@ describe('완료 체크 (F3)', () => {
   beforeEach(rememberLaterOpen)
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-
-  function deferred<T>() {
-    let resolve!: (value: T) => void
-    const promise = new Promise<T>((r) => {
-      resolve = r
-    })
-    return { promise, resolve }
-  }
 
   /** 서버가 돌려줄 완료 응답: 마지막 수행일이 오늘로 바뀐 집안일과 완료 기록 */
   function completed(chore: ChoreRecord, completionId: string) {
@@ -335,7 +393,9 @@ describe('완료 체크 (F3)', () => {
   }
 
   function checkButton(region: HTMLElement, name: string): HTMLButtonElement {
-    return within(cardOf(region, name)).getByRole('button', { name: new RegExp(`^${name} (완료 체크|오늘 완료함)$`) })
+    return within(cardOf(region, name)).getByRole('button', {
+      name: new RegExp(`^${name} (완료 체크|오늘 완료함, 누르면 완료 취소)$`),
+    })
   }
 
   function badgeOf(region: HTMLElement, name: string): string {
@@ -363,13 +423,13 @@ describe('완료 체크 (F3)', () => {
     await user.click(checkButton(todaySection, '화분 물주기'))
 
     // 응답 전: 카드가 바로 그 밖의 집안일의 제자리로 가고, 게이지가 차고 배지가 바뀌고,
-    // 버튼은 "오늘 완료함"으로 눌리지 않는다.
+    // 버튼은 "오늘 완료함"이 되며 응답이 올 때까지 눌리지 않는다.
     const others = section('그 밖의 집안일')
     expect(cardNames(others)).toEqual(['이불 빨래', '화분 물주기', '냉장고 청소'])
     expect(badgeOf(others, '화분 물주기')).toBe('D-7')
     expect(gaugeOf(others, '화분 물주기')).toBe('7')
     const check = checkButton(others, '화분 물주기')
-    expect(check.getAttribute('aria-label')).toBe('화분 물주기 오늘 완료함')
+    expect(check.getAttribute('aria-label')).toBe('화분 물주기 오늘 완료함, 누르면 완료 취소')
     expect(check.disabled).toBe(true)
     // 요약은 바로 바뀐다.
     expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 1개 포함)')
@@ -476,14 +536,120 @@ describe('완료 체크 (F3)', () => {
     ])
   })
 
-  it('오늘 이미 완료한 집안일은 "오늘 완료함"으로 보이고 눌리지 않는다', async () => {
-    const { calls } = await renderDashboard([...CHORES, record('d', '설거지', 2, TODAY)])
-    const check = checkButton(section('그 밖의 집안일'), '설거지')
-    expect(check.getAttribute('aria-label')).toBe('설거지 오늘 완료함')
-    expect(check.disabled).toBe(true)
-    expect(check.className).toContain('chore-card__check--done')
-    fireEvent.click(check)
-    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  describe('오늘 완료 취소 (U6)', () => {
+    // 설거지: 주기 2일, 마지막 수행일이 오늘(D-2). 완료를 취소하면 10/12로 돌아가 D-Day가 된다.
+    const DISHES = record('d', '설거지', 2, TODAY)
+    const DISHES_BEFORE = { ...DISHES, lastDoneAt: '2026-10-12' }
+
+    it('오늘 완료한 카드는 초록 체크가 눌리는 버튼이고, 읽기용 이름에 "누르면 완료 취소"가 있다', async () => {
+      await renderDashboard([...CHORES, DISHES])
+      const check = checkButton(section('그 밖의 집안일'), '설거지')
+      expect(check.getAttribute('aria-label')).toBe('설거지 오늘 완료함, 누르면 완료 취소')
+      expect(check.disabled).toBe(false)
+      expect(check.className).toContain('chore-card__check--done')
+      // 되돌릴 수 있다는 작은 표시
+      expect(check.querySelector('.chore-card__check-undo')?.textContent).toBe('↺')
+      // 완료 전 카드에는 그 표시가 없다.
+      expect(checkButton(section('오늘 할 일'), '걸레질').querySelector('.chore-card__check-undo')).toBeNull()
+    })
+
+    it('누르면 확인 창 없이 바로 체크를 풀고 DELETE …/completions/today를 보낸 뒤, 응답으로 배지와 위치를 고치고 "완료 취소" 알림을 띄운다', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm')
+      const response = deferred<Response>()
+      const { calls } = mockFetch({
+        'GET /api/chores': () => jsonResponse([...CHORES, DISHES]),
+        'DELETE /api/chores/d/completions/today': () => response.promise,
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+
+      await user.click(checkButton(section('그 밖의 집안일'), '설거지'))
+      expect(confirm).not.toHaveBeenCalled()
+      expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url}`)).toEqual([
+        'DELETE /api/chores/d/completions/today',
+      ])
+      // 응답 전: 체크가 바로 완료 전 모양이 되고, 응답이 올 때까지 눌리지 않는다.
+      const pendingCheck = checkButton(section('그 밖의 집안일'), '설거지')
+      expect(pendingCheck.getAttribute('aria-label')).toBe('설거지 완료 체크')
+      expect(pendingCheck.className).not.toContain('chore-card__check--done')
+      expect(pendingCheck.disabled).toBe(true)
+
+      response.resolve(jsonResponse(DISHES_BEFORE))
+      const toast = await screen.findByTestId('undo-toast')
+      expect(toast.querySelector('.toast__text')?.textContent).toBe('설거지 완료 취소')
+      // 서버가 되돌린 마지막 수행일(10/12)로 D-Day가 되어 오늘 할 일로 옮겨진다.
+      expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질', '설거지'])
+      expect(badgeOf(section('오늘 할 일'), '설거지')).toBe('D-Day')
+      expect(checkButton(section('오늘 할 일'), '설거지').disabled).toBe(false)
+      expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 4개 (밀린 일 2개 포함)')
+    })
+
+    it('완료 취소를 실행 취소하면 다시 완료로 POST하고 오늘 완료함으로 돌아간다', async () => {
+      const user = userEvent.setup()
+      const { calls } = mockFetch({
+        'GET /api/chores': () => jsonResponse([...CHORES, DISHES]),
+        'DELETE /api/chores/d/completions/today': () => jsonResponse(DISHES_BEFORE),
+        'POST /api/chores/d/completions': (call) =>
+          jsonResponse(completed(DISHES_BEFORE, (call.body as { id: string }).id), 201),
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+      await user.click(checkButton(section('그 밖의 집안일'), '설거지'))
+      const toast = await screen.findByTestId('undo-toast')
+
+      await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+      // 응답 전에도 바로 오늘 완료한 상태로 돌아간다.
+      expect(badgeOf(section('그 밖의 집안일'), '설거지')).toBe('D-2')
+      const post = calls.find((c) => c.method === 'POST')
+      if (!post) throw new Error('POST가 없음')
+      expect(post.url).toBe('/api/chores/d/completions')
+      expect((post.body as { id: string }).id).toMatch(UUID_RE)
+      await waitFor(() => expect(checkButton(section('그 밖의 집안일'), '설거지').disabled).toBe(false))
+      expect(checkButton(section('그 밖의 집안일'), '설거지').getAttribute('aria-label')).toBe(
+        '설거지 오늘 완료함, 누르면 완료 취소',
+      )
+      expect(screen.queryByTestId('undo-toast')).toBeNull()
+    })
+
+    it('완료 취소에 실패하면 완료한 상태로 되돌리고 오류를 알린다. 오늘 완료 기록이 없으면(404) 따로 안내한다', async () => {
+      const user = userEvent.setup()
+      mockFetch({
+        'GET /api/chores': () => jsonResponse([...CHORES, DISHES]),
+        'DELETE /api/chores/d/completions/today': () => jsonResponse({ detail: '오늘 완료한 기록이 없다' }, 404),
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+      await user.click(checkButton(section('그 밖의 집안일'), '설거지'))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.querySelector('.error-notice__title')?.textContent).toBe('완료를 취소하지 못했어요.')
+      expect(alert.querySelector('.error-notice__hint')?.textContent).toContain('오늘 완료한 기록이 없어요.')
+      const check = checkButton(section('그 밖의 집안일'), '설거지')
+      expect(check.getAttribute('aria-label')).toBe('설거지 오늘 완료함, 누르면 완료 취소')
+      expect(check.disabled).toBe(false)
+      expect(badgeOf(section('그 밖의 집안일'), '설거지')).toBe('D-2')
+      expect(screen.queryByTestId('undo-toast')).toBeNull()
+    })
+
+    it('실행 취소(다시 완료)에 실패하면 완료 취소한 상태로 되돌리고 오류를 알린다', async () => {
+      const user = userEvent.setup()
+      mockFetch({
+        'GET /api/chores': () => jsonResponse([...CHORES, DISHES]),
+        'DELETE /api/chores/d/completions/today': () => jsonResponse(DISHES_BEFORE),
+        'POST /api/chores/d/completions': () => jsonResponse({ detail: '서버 고장' }, 500),
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+      await user.click(checkButton(section('그 밖의 집안일'), '설거지'))
+      const toast = await screen.findByTestId('undo-toast')
+      await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.querySelector('.error-notice__title')?.textContent).toBe('완료 체크를 저장하지 못했어요.')
+      expect(badgeOf(section('오늘 할 일'), '설거지')).toBe('D-Day')
+      expect(checkButton(section('오늘 할 일'), '설거지').getAttribute('aria-label')).toBe('설거지 완료 체크')
+    })
   })
 
   it('체크하면 실행 취소 알림이 떠 있어도 카드가 바로 남은 일수 순서의 제자리로 옮겨진다', async () => {
@@ -1058,7 +1224,7 @@ describe('게이지로 남은 일수 조절', () => {
 })
 
 describe('집안일 추가', () => {
-  it('검증에 실패하면 POST하지 않고, 통과하면 camelCase 본문으로 POST한 뒤 목록을 다시 불러온다', async () => {
+  it('검증에 실패하면 POST하지 않고, 통과하면 camelCase 본문으로 POST한 뒤 응답으로 대시보드에 카드를 넣는다', async () => {
     const user = userEvent.setup()
     await renderDashboard()
     // 대시보드 첫 로드 이후의 요청만 기록한다.
@@ -1093,13 +1259,17 @@ describe('집안일 추가', () => {
     await user.type(screen.getByLabelText('주기 (일)'), '14')
     await user.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitDashboard()
-    // POST 다음에 대시보드가 목록을 다시 불러온다.
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores', 'GET /api/chores'])
+    // 시트가 닫히고, 목록을 다시 받지 않고 응답으로 카드를 넣는다(대시보드는 시트 뒤에 그대로 있었다).
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores'])
     const body = calls[1].body as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['id', 'intervalDays', 'lastDoneAt', 'name'])
     expect(body).toMatchObject({ name: '욕실 청소', intervalDays: 14, lastDoneAt: TODAY })
     expect(body.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    // D-14라서 접힌 "나중에 할 일"에 들어갔다.
+    expect(laterToggle().textContent).toBe('나중에 할 일 2개 더 보기')
+    await user.click(laterToggle())
+    expect(screen.getByRole('button', { name: '욕실 청소 14일마다 D-14 편집' })).toBeTruthy()
   })
 
   it('주기 오류 문구는 상황별로 짧게 나온다', async () => {
@@ -1267,12 +1437,6 @@ describe('기본 목록에서 고르기', () => {
     return screen.getByRole('button', { name: new RegExp(`^${name} (매일|\\d+일마다)( 추가됨)?$`) }) as HTMLButtonElement
   }
 
-  /** 기본 목록을 받은 뒤 카테고리를 펼친다. */
-  async function expand(user: UserEvent, category: string) {
-    const toggle = await screen.findByRole('button', { name: new RegExp(`^${category} \\d+$`) })
-    if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle)
-  }
-
   it('카테고리를 펼쳐 항목을 누르면 이름, 아이콘, 주기가 채워진 폼이 열리고, 저장하면 그 값으로 POST한다', async () => {
     const user = userEvent.setup()
     await renderDashboard([])
@@ -1293,8 +1457,10 @@ describe('기본 목록에서 고르기', () => {
     expect((screen.getByLabelText('메모 (선택)') as HTMLTextAreaElement).value).toBe('')
 
     await user.click(screen.getByRole('button', { name: '저장' }))
-    await waitDashboard()
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores', 'GET /api/chores'])
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/presets', 'POST /api/chores'])
+    // 첫 집안일이 응답으로 바로 들어간다(D-14라 접힌 "나중에 할 일"에 있다).
+    expect(laterToggle().textContent).toBe('나중에 할 일 1개 더 보기')
     const body = calls[1].body as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['icon', 'id', 'intervalDays', 'lastDoneAt', 'name'])
     expect(body).toMatchObject({ name: '이불 빨래', icon: '🛏️', intervalDays: 14, lastDoneAt: TODAY })
@@ -1388,7 +1554,7 @@ describe('기본 목록에서 고르기', () => {
 })
 
 describe('집안일 편집', () => {
-  it('카드를 누르면 기존 값을 채워 보여주고, 바뀐 필드만 PATCH한다', async () => {
+  it('카드를 누르면 기존 값을 채워 보여주고, 바뀐 필드만 PATCH한 뒤 응답으로 카드를 고친다', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch({
       'GET /api/chores': () => jsonResponse(CHORES),
@@ -1409,12 +1575,14 @@ describe('집안일 편집', () => {
     await user.clear(screen.getByLabelText('메모 (선택)'))
     await user.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitDashboard()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const patches = calls.filter((c) => c.method === 'PATCH')
     expect(patches).toHaveLength(1)
     expect(patches[0].url).toBe('/api/chores/a')
     expect(patches[0].body).toEqual({ intervalDays: 10, note: null })
-    expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2)
+    // 목록은 다시 받지 않는다. 주기 10일 → 10/5 + 10 = 10/15, D-1
+    expect(calls.filter((c) => c.method === 'GET')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '화분 물주기 10일마다 D-1 편집' })).toBeTruthy()
   })
 
   it('바뀐 것이 없으면 PATCH하지 않는다', async () => {
@@ -1474,48 +1642,51 @@ describe('집안일 편집', () => {
     expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
   })
 
-  it('삭제를 확인하면 DELETE하고 대시보드로 돌아가 목록을 다시 불러온다', async () => {
+  it('삭제는 저장 줄이 아니라 시트 머리줄(제목 옆)에 있다 (U2)', async () => {
     const user = userEvent.setup()
-    let chores = CHORES
+    await renderDashboard()
+    await openCard(user, '걸레질')
+    const dialog = screen.getByRole('dialog', { name: '집안일 편집' })
+    const remove = within(dialog).getByRole('button', { name: '삭제' })
+    expect(remove.closest('.sheet__header')).toBeTruthy()
+    expect(remove.closest('.sheet__footer')).toBeNull()
+    expect(within(dialog).getByRole('button', { name: '저장' }).closest('.sheet__footer')).toBeTruthy()
+  })
+
+  it('머리줄 삭제를 누르면 묻지 않고 시트를 닫고 카드를 먼저 뺀 뒤 DELETE하고, "삭제됨" 실행 취소 알림을 띄운다', async () => {
+    const user = userEvent.setup()
+    const response = deferred<Response>()
     const { calls } = mockFetch({
-      'GET /api/chores': () => jsonResponse(chores),
-      'DELETE /api/chores/b': () => {
-        chores = CHORES.filter((c) => c.id !== 'b')
-        return new Response(null, { status: 204 })
-      },
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'DELETE /api/chores/b': () => response.promise,
     })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirm = vi.spyOn(window, 'confirm')
     render(<App today={TODAY} />)
     await waitDashboard()
 
     await openCard(user, '걸레질')
+    await user.type(screen.getByLabelText('메모 (선택)'), '거실')
     await user.click(screen.getByRole('button', { name: '삭제' }))
 
-    expect(confirm).toHaveBeenCalledTimes(1)
-    expect(confirm).toHaveBeenCalledWith("'걸레질' 삭제할까요?")
-    await waitDashboard()
-    await waitFor(() => expect(cardNames(section('오늘 할 일'))).not.toContain('걸레질'))
-    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual(['/api/chores/b'])
+    // 확인 창이 없다(실행 취소로 되돌린다). 작성 중이던 내용도 묻지 않는다.
+    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기'])
     expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 2개 포함)')
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url}`)).toEqual(['DELETE /api/chores/b'])
+
+    response.resolve(new Response(null, { status: 204 }))
+    const toast = await screen.findByTestId('undo-toast')
+    expect(toast.querySelector('.toast__text')?.textContent).toBe('걸레질 삭제됨')
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
   })
 
-  it('삭제를 취소하면 DELETE하지 않고 편집 화면에 머문다', async () => {
-    const user = userEvent.setup()
-    const { calls } = await renderDashboard()
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
-    await openCard(user, '걸레질')
-    await user.click(screen.getByRole('button', { name: '삭제' }))
-    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
-    expect(screen.getByRole('heading', { name: '집안일 편집' })).toBeTruthy()
-  })
-
-  it('삭제에 실패하면 한국어 안내와 기술 정보를 보여주고 편집 화면에 머문다', async () => {
+  it('삭제에 실패하면 카드를 원래 자리로 되돌리고 대시보드에 오류를 알린다', async () => {
     const user = userEvent.setup()
     mockFetch({
       'GET /api/chores': () => jsonResponse(CHORES),
       'DELETE /api/chores/b': () => new Response('Bad Gateway', { status: 502 }),
     })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App today={TODAY} />)
     await waitDashboard()
     await openCard(user, '걸레질')
@@ -1527,7 +1698,8 @@ describe('집안일 편집', () => {
       'PC 서버가 켜져 있는지, 집 Wi-Fi에 연결돼 있는지 확인한 뒤 다시 삭제해 주세요.',
     )
     expect(alert.querySelector('.error-notice__detail')?.textContent).toBe('오류 코드 502 · Bad Gateway')
-    expect(screen.getByRole('heading', { name: '집안일 편집' })).toBeTruthy()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
   })
 
   it('추가 화면에는 삭제 버튼이 없다', async () => {
@@ -1535,5 +1707,505 @@ describe('집안일 편집', () => {
     await renderDashboard()
     await openAddForm(user)
     expect(screen.queryByRole('button', { name: '삭제' })).toBeNull()
+  })
+})
+
+describe('바텀 시트 (R5)', () => {
+  it('"+"를 누르면 대시보드 위에 시트가 열리고, 뒤의 대시보드는 그대로 있으면서 누를 수 없게 된다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openPicker(user)
+    const dialog = screen.getByRole('dialog', { name: PICKER_TITLE })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    // 대시보드는 다시 그려지지 않고 뒤에 남아 있다.
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 3개 (밀린 일 2개 포함)')
+    expect(document.querySelector('.app')?.hasAttribute('inert')).toBe(true)
+    expect(document.body.classList.contains('sheet-open')).toBe(true)
+    // 머리줄(제목, 편집, 닫기)과 스크롤되는 본문으로 나뉜다.
+    expect(dialog.querySelector('.sheet__header')?.contains(within(dialog).getByRole('button', { name: '닫기' }))).toBe(true)
+    expect(dialog.querySelector('.sheet__body')?.contains(within(dialog).getByRole('button', { name: '직접 입력' }))).toBe(true)
+
+    await user.click(within(dialog).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.querySelector('.app')?.hasAttribute('inert')).toBe(false)
+    expect(document.body.classList.contains('sheet-open')).toBe(false)
+  })
+
+  it('바깥(어두운 덮개)을 누르거나 Esc를 누르면 닫힌다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openPicker(user)
+    await user.click(screen.getByTestId('sheet-backdrop'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await openCard(user, '걸레질')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('손잡이를 아래로 끌어 놓으면 닫히고, 조금만 끌면 그대로 열려 있다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openPicker(user)
+    const handle = screen.getByRole('dialog').querySelector('.sheet__handle') as HTMLElement
+    const pointer = { pointerId: 5, isPrimary: true, pointerType: 'touch' }
+
+    fireEvent.pointerDown(handle, { ...pointer, clientY: 100 })
+    fireEvent.pointerMove(handle, { ...pointer, clientY: 130 })
+    expect(screen.getByRole('dialog').style.transform).toBe('translateY(30px)')
+    // 천천히 30px만 끌고 놓으면 닫히지 않는다.
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    fireEvent.pointerUp(handle, { ...pointer, clientY: 130 })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('dialog').style.transform).toBe(''))
+
+    fireEvent.pointerDown(handle, { ...pointer, clientY: 100 })
+    fireEvent.pointerMove(handle, { ...pointer, clientY: 260 })
+    fireEvent.pointerUp(handle, { ...pointer, clientY: 260 })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('머리줄의 버튼에서 시작한 끌기는 시트를 움직이지 않는다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openPicker(user)
+    const close = within(screen.getByRole('dialog')).getByRole('button', { name: '닫기' })
+    const pointer = { pointerId: 6, isPrimary: true, pointerType: 'touch' }
+    fireEvent.pointerDown(close, { ...pointer, clientY: 100 })
+    fireEvent.pointerMove(close, { ...pointer, clientY: 300 })
+    fireEvent.pointerUp(close, { ...pointer, clientY: 300 })
+    expect(screen.getByRole('dialog').style.transform).toBe('')
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('입력이 바뀐 폼은 닫기·바깥 탭에서 버릴지 묻고, 취소하면 그대로 열려 있다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openCard(user, '걸레질')
+    await user.type(screen.getByLabelText('메모 (선택)'), '거실')
+
+    await user.click(screen.getByTestId('sheet-backdrop'))
+    expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '닫기' }))
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect((screen.getByLabelText('메모 (선택)') as HTMLTextAreaElement).value).toBe('거실')
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByTestId('sheet-backdrop'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('기본 목록의 작은 입력 폼에 입력한 내용이 있으면 시트를 닫을 때도 묻는다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openPicker(user)
+    await user.click(await screen.findByRole('button', { name: '+ 카테고리 추가' }))
+    await user.type(screen.getByLabelText('카테고리 이름'), '베란다')
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: '닫기' })[0])
+    expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
+    expect(screen.getByRole('form', { name: '카테고리 추가' })).toBeTruthy()
+  })
+
+  it('기본 목록에서 폼으로 넘어가도 같은 시트 안에서 내용만 바뀐다. 추가 폼의 닫기(✕)는 한 번에 대시보드로 간다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openPicker(user)
+    const sheet = screen.getByTestId('sheet')
+    await user.click(screen.getByRole('button', { name: '직접 입력' }))
+    expect(screen.getByTestId('sheet')).toBe(sheet)
+    expect(screen.getByRole('dialog', { name: '집안일 추가' })).toBeTruthy()
+    // 저장 버튼은 스크롤되는 본문 밖, 시트 맨 아래 줄에 있다.
+    expect(screen.getByRole('button', { name: '저장' }).closest('.sheet__footer')).toBeTruthy()
+    expect(screen.getByLabelText('이름').closest('.sheet__body')).toBeTruthy()
+
+    await user.click(within(sheet).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  describe('움직임', () => {
+    type Listener = () => void
+    function fakeAnimate() {
+      const listeners: Listener[] = []
+      const animate = vi.fn(
+        () =>
+          ({
+            cancel() {},
+            addEventListener: (type: string, listener: Listener) => {
+              if (type === 'finish') listeners.push(listener)
+            },
+          }) as unknown as Animation,
+      )
+      Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true, writable: true })
+      return { animate, finish: () => listeners.forEach((l) => l()) }
+    }
+
+    afterEach(() => {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).animate
+    })
+
+    it('닫을 때 시트가 아래로 내려가는 움직임이 끝난 뒤 빠진다. 그동안은 누를 수 없다', async () => {
+      const user = userEvent.setup()
+      const { animate, finish } = fakeAnimate()
+      await renderDashboard()
+      await openPicker(user)
+      animate.mockClear()
+
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '닫기' }))
+      expect(animate).toHaveBeenCalledWith(
+        [{ transform: 'none' }, { transform: 'translateY(100%)' }],
+        expect.objectContaining({ duration: SHEET_EXIT_MS }),
+      )
+      expect(document.querySelector('.sheet-layer')?.classList.contains('sheet-layer--closing')).toBe(true)
+      // 닫히는 동안 대시보드는 다시 누를 수 있다.
+      expect(document.querySelector('.app')?.hasAttribute('inert')).toBe(false)
+
+      act(() => finish())
+      expect(document.querySelector('.sheet-layer')).toBeNull()
+    })
+
+    it('움직임 줄이기 설정이면 바로 닫힌다', async () => {
+      const user = userEvent.setup()
+      fakeAnimate()
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query }))
+      await renderDashboard()
+      await openPicker(user)
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '닫기' }))
+      expect(document.querySelector('.sheet-layer')).toBeNull()
+    })
+  })
+})
+
+describe('방문 기록과 뒤로 가기 (U3)', () => {
+  it('기본 목록: 작은 입력 폼 → 편집 모드 → 시트 순서로 하나씩 닫히고, 주소는 #/add → #/ 이다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    expect(depth()).toBe(0)
+
+    await openPicker(user)
+    await waitFor(() => expect(window.location.hash).toBe('#/add'))
+    await user.click(await screen.findByRole('button', { name: '편집' }))
+    await expand(user, '주방')
+    await user.click(within(screen.getByRole('region', { name: '주방' })).getByRole('button', { name: '+ 항목 추가' }))
+    expect(screen.getByRole('form', { name: '항목 추가' })).toBeTruthy()
+    await waitFor(() => expect(depth()).toBe(3))
+    // 편집 모드와 입력 폼은 주소를 바꾸지 않는다.
+    expect(window.location.hash).toBe('#/add')
+
+    await pressBack()
+    expect(screen.queryByRole('form', { name: '항목 추가' })).toBeNull()
+    expect(screen.getByRole('button', { name: '완료' })).toBeTruthy()
+
+    await pressBack()
+    expect(screen.getByRole('button', { name: '편집' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: PICKER_TITLE })).toBeTruthy()
+
+    await pressBack()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(window.location.hash).toBe('#/')
+    expect(depth()).toBe(0)
+  })
+
+  it('추가 폼(#/add/form)에서 뒤로 가면 기본 목록, 한 번 더 누르면 대시보드다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openAddForm(user)
+    await waitFor(() => expect(window.location.hash).toBe('#/add/form'))
+    expect(depth()).toBe(2)
+
+    await pressBack()
+    expect(screen.getByRole('dialog', { name: PICKER_TITLE })).toBeTruthy()
+    expect(window.location.hash).toBe('#/add')
+
+    await pressBack()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it('편집(#/edit/<id>)에서 뒤로 가면 대시보드다. 대시보드의 스크롤 위치는 그대로다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const scrollTo = vi.fn()
+    vi.stubGlobal('scrollTo', scrollTo)
+    await openCard(user, '걸레질')
+    await waitFor(() => expect(window.location.hash).toBe('#/edit/b'))
+
+    await pressBack()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(window.location.hash).toBe('#/')
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('화면의 취소·닫기로 닫아도 기록에서 빠진다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openAddForm(user)
+    await waitFor(() => expect(depth()).toBe(2))
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/add'))
+    expect(depth()).toBe(1)
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    expect(depth()).toBe(0)
+  })
+
+  it('저장해서 닫힌 폼은 기록에서 빠져서, 대시보드에서 뒤로 가기를 눌러도 폼이 다시 열리지 않는다', async () => {
+    const user = userEvent.setup()
+    // 앱보다 앞의 기록(앱을 열기 전 페이지)
+    window.history.replaceState(null, '', '/before')
+    window.history.pushState(null, '', '/')
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'POST /api/chores': (call) => jsonResponse({ ...(call.body as object), icon: null, note: null }, 201),
+      ...presetRoutes(),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    await openAddForm(user)
+    await user.type(screen.getByLabelText('이름'), '욕실 청소')
+    await user.type(screen.getByLabelText('주기 (일)'), '3')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    expect(depth()).toBe(0)
+
+    await pressBack()
+    expect(window.location.pathname).toBe('/before')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('입력이 바뀐 폼에서 뒤로 가기를 누르면 버릴지 묻고, 취소하면 폼과 기록이 그대로다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openCard(user, '걸레질')
+    await waitFor(() => expect(depth()).toBe(1))
+    await user.type(screen.getByLabelText('메모 (선택)'), '거실')
+
+    await pressBack()
+    expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
+    expect(screen.getByRole('dialog', { name: '집안일 편집' })).toBeTruthy()
+    expect((screen.getByLabelText('메모 (선택)') as HTMLTextAreaElement).value).toBe('거실')
+    await waitFor(() => expect(window.location.hash).toBe('#/edit/b'))
+    expect(depth()).toBe(1)
+
+    // 다시 누르고 버리면 닫힌다.
+    confirm.mockReturnValue(true)
+    await pressBack()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it('기본 목록의 작은 입력 폼도 입력이 있으면 뒤로 가기에서 묻는다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openPicker(user)
+    await user.click(await screen.findByRole('button', { name: '+ 카테고리 추가' }))
+    await user.type(screen.getByLabelText('카테고리 이름'), '베란다')
+    await waitFor(() => expect(depth()).toBe(2))
+
+    await pressBack()
+    expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
+    expect(screen.getByRole('form', { name: '카테고리 추가' })).toBeTruthy()
+    await waitFor(() => expect(depth()).toBe(2))
+
+    confirm.mockReturnValue(true)
+    await pressBack()
+    expect(screen.queryByRole('form', { name: '카테고리 추가' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: PICKER_TITLE })).toBeTruthy()
+  })
+
+  describe('새로고침', () => {
+    it('#/edit/<id>로 열면 목록을 받은 뒤 그 집안일의 편집 시트가 열리고, 뒤로 가면 대시보드다', async () => {
+      window.history.replaceState(null, '', '/#/edit/a')
+      await renderDashboard()
+      expect(await screen.findByRole('dialog', { name: '집안일 편집' })).toBeTruthy()
+      expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('화분 물주기')
+      await waitFor(() => expect(depth()).toBe(1))
+      expect(window.location.hash).toBe('#/edit/a')
+
+      await pressBack()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(window.location.hash).toBe('#/')
+    })
+
+    it('없는 id(#/edit/<없는 id>)나 삭제된 집안일이면 대시보드로 간다', async () => {
+      window.history.replaceState(null, '', '/#/edit/nope')
+      await renderDashboard()
+      await waitFor(() => expect(window.location.hash).toBe('#/'))
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(depth()).toBe(0)
+      cleanup()
+      await settleHistory()
+
+      window.history.replaceState(null, '', '/#/edit/z')
+      await renderDashboard([...CHORES, record('z', '빨래', 3, TODAY, { deletedAt: '2026-10-13T00:00:00Z' })])
+      await waitFor(() => expect(window.location.hash).toBe('#/'))
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('알 수 없는 주소는 대시보드로 연다', async () => {
+      window.history.replaceState(null, '', '/#/what/ever')
+      await renderDashboard()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      await waitFor(() => expect(window.location.hash).toBe('#/'))
+    })
+
+    it('#/add, #/add/form으로 열면 기본 목록, 그 위의 빈 추가 폼이 열린다', async () => {
+      window.history.replaceState(null, '', '/#/add/form')
+      await renderDashboard()
+      expect(screen.getByRole('dialog', { name: '집안일 추가' })).toBeTruthy()
+      expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('')
+      await waitFor(() => expect(depth()).toBe(2))
+
+      await pressBack()
+      expect(screen.getByRole('dialog', { name: PICKER_TITLE })).toBeTruthy()
+      expect(window.location.hash).toBe('#/add')
+    })
+
+    it('지난번 기록(깊이 2) 위에서 새로고침하면 바닥까지 돌아간 뒤 다시 쌓아, 뒤로 가기 순서가 그대로다', async () => {
+      window.history.replaceState({ aifredDepth: 0 }, '', '/#/')
+      window.history.pushState({ aifredDepth: 1 }, '', '/#/add')
+      window.history.pushState({ aifredDepth: 2 }, '', '/#/add/form')
+      await renderDashboard()
+      expect(screen.getByRole('dialog', { name: '집안일 추가' })).toBeTruthy()
+      await waitFor(() => expect(window.location.hash).toBe('#/add/form'))
+      expect(depth()).toBe(2)
+
+      await pressBack()
+      expect(screen.getByRole('dialog', { name: PICKER_TITLE })).toBeTruthy()
+      await pressBack()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(window.location.hash).toBe('#/')
+      expect(depth()).toBe(0)
+    })
+  })
+})
+
+describe('카드 "⋯" 메뉴 (U2)', () => {
+  async function openMenu(user: UserEvent, name: string) {
+    await user.click(screen.getByRole('button', { name: `${name} 메뉴` }))
+    return screen.getByRole('dialog', { name })
+  }
+
+  it('"⋯"를 누르면 이름을 제목으로 한 메뉴에 "편집"과 "삭제"가 큰 줄로 나온다. 카드 윗줄을 누르면 지금처럼 편집이 열린다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const menu = await openMenu(user, '걸레질')
+    const buttons = within(menu).getAllByRole('button')
+    expect(buttons.map((b) => b.textContent?.replace(/\s/g, ''))).toEqual(['✕', '✏️편집', '🗑삭제'])
+    expect(within(menu).getByRole('button', { name: '편집' }).className).toBe('action-list__item')
+    expect(within(menu).getByRole('button', { name: '삭제' }).className).toContain('action-list__item--danger')
+
+    await user.click(within(menu).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await openCard(user, '걸레질')
+  })
+
+  it('"편집"을 고르면 메뉴가 닫히고 편집 시트가 열린다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    const menu = await openMenu(user, '화분 물주기')
+    await user.click(within(menu).getByRole('button', { name: '편집' }))
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('dialog', { name: '집안일 편집' })).toBeTruthy()
+    expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('화분 물주기')
+    await waitFor(() => expect(window.location.hash).toBe('#/edit/a'))
+    expect(depth()).toBe(1)
+  })
+
+  it('바깥 탭, Esc, 뒤로 가기로 닫힌다. 메뉴는 주소를 바꾸지 않고 기록에만 한 층 쌓인다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await openMenu(user, '걸레질')
+    await user.click(screen.getByTestId('sheet-backdrop'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await openMenu(user, '걸레질')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await openMenu(user, '걸레질')
+    await waitFor(() => expect(depth()).toBe(1))
+    expect(window.location.hash).toBe('#/')
+    await pressBack()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(depth()).toBe(0)
+  })
+
+  it('"삭제"는 묻지 않고 카드를 먼저 뺀 뒤 DELETE하고 "삭제됨" 알림을 띄운다. 실행 취소하면 restore로 되살린다', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm')
+    const restore = deferred<Response>()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'DELETE /api/chores/b': () => new Response(null, { status: 204 }),
+      'POST /api/chores/b/restore': () => restore.promise,
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+
+    const menu = await openMenu(user, '걸레질')
+    await user.click(within(menu).getByRole('button', { name: '삭제' }))
+    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기'])
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 2개 포함)')
+
+    const toast = await screen.findByTestId('undo-toast')
+    expect(toast.querySelector('.toast__text')?.textContent).toBe('걸레질 삭제됨')
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url}`)).toEqual(['DELETE /api/chores/b'])
+
+    await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+    // 응답 전에도 바로 제자리에 돌아온다.
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/chores/b/restore'])
+    restore.resolve(jsonResponse(CHORES[3]))
+    await waitFor(() =>
+      expect((within(section('오늘 할 일')).getByRole('button', { name: '걸레질 완료 체크' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 3개 (밀린 일 2개 포함)')
+  })
+
+  it('삭제에 실패하면 카드를 되돌리고 오류를 알린다', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'DELETE /api/chores/b': () => jsonResponse({ detail: '집안일을 찾을 수 없다' }, 404),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const menu = await openMenu(user, '걸레질')
+    await user.click(within(menu).getByRole('button', { name: '삭제' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.querySelector('.error-notice__title')?.textContent).toBe('삭제하지 못했어요.')
+    expect(alert.querySelector('.error-notice__hint')?.textContent).toContain('이미 삭제된 집안일일 수 있어요.')
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+  })
+
+  it('되살리기에 실패하면 다시 삭제된 상태로 두고 오류를 알린다', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'DELETE /api/chores/b': () => new Response(null, { status: 204 }),
+      'POST /api/chores/b/restore': () => jsonResponse({ detail: '서버 고장' }, 500),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const menu = await openMenu(user, '걸레질')
+    await user.click(within(menu).getByRole('button', { name: '삭제' }))
+    const toast = await screen.findByTestId('undo-toast')
+    await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.querySelector('.error-notice__title')?.textContent).toBe('실행 취소하지 못했어요.')
+    expect(alert.querySelector('.error-notice__hint')?.textContent).toContain('삭제된 채로 남아 있어요.')
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기'])
   })
 })

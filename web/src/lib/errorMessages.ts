@@ -108,7 +108,28 @@ export function presetDeleteErrorText(error: unknown): ErrorText {
   return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }
 }
 
+const RELOAD_HINT = '화면을 새로고침해 목록을 다시 확인해 주세요.'
+
+/** 집안일 삭제("⋯" 메뉴, 편집 시트 머리줄) 실패. 카드는 원래 자리로 돌아온다. */
 export function deleteErrorText(error: unknown): ErrorText {
-  const hint = statusOf(error) === 404 ? MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
+  const hint = statusOf(error) === 404 ? `이미 삭제된 집안일일 수 있어요. ${RELOAD_HINT}` : `${CONNECTION_HINT} 다시 삭제해 주세요.`
   return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
+/** 삭제의 실행 취소(되살리기) 실패. 집안일은 삭제된 채로 남는다. */
+export function restoreErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `집안일은 삭제된 채로 남아 있어요. ${CONNECTION_HINT} 다시 추가해 주세요.`
+  if (status === 404 || status === 409) hint = `이미 되살렸거나 찾을 수 없는 집안일이에요. ${RELOAD_HINT}`
+  return { title: '실행 취소하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
+/** 오늘 완료 취소(초록 체크 다시 누르기) 실패. 카드는 완료한 상태로 돌아온다. */
+export function uncompleteErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `${CONNECTION_HINT} 다시 눌러 주세요.`
+  if (status === 404) {
+    hint = '오늘 완료한 기록이 없어요. 게이지나 편집으로 바꾼 날짜는 같은 방법으로 다시 고쳐 주세요.'
+  }
+  return { title: '완료를 취소하지 못했어요.', hint, detail: technicalDetail(error) }
 }

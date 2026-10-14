@@ -82,3 +82,19 @@ def delete_chore(chore_id: str, session: SessionDep, now: NowDep) -> Response:
     session.add(chore)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{chore_id}/restore", response_model=ChoreRead)
+def restore_chore(chore_id: str, session: SessionDep, now: NowDep) -> Chore:
+    """삭제를 실행 취소한다(UX U2). 완료 기록은 삭제할 때 건드리지 않으므로 그대로 이어진다."""
+    chore = session.get(Chore, chore_id)
+    if chore is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="집안일을 찾을 수 없다")
+    if chore.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="삭제되지 않은 집안일이다")
+    chore.deleted_at = None
+    chore.updated_at = now
+    session.add(chore)
+    session.commit()
+    session.refresh(chore)
+    return chore

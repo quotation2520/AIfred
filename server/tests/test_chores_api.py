@@ -343,6 +343,56 @@ def test_delete_twice_or_missing_is_404(client):
     assert client.delete(f"/api/chores/{CLIENT_ID}").status_code == 404
 
 
+# --- 삭제 되살리기 ---
+
+
+def test_restore_deleted_chore_reappears_in_list(client, clock, engine):
+    body = create(client)
+    clock.tick()
+    client.delete(f"/api/chores/{body['id']}")
+    clock.tick()
+
+    response = client.post(f"/api/chores/{body['id']}/restore")
+
+    assert response.status_code == 200
+    restored = response.json()
+    assert set(restored) == CAMEL_KEYS
+    assert restored["deletedAt"] is None
+    assert parse_utc(restored["updatedAt"]) == clock.now
+    assert {k: v for k, v in restored.items() if k != "updatedAt"} == {
+        k: v for k, v in body.items() if k != "updatedAt"
+    }
+    assert client.get("/api/chores").json() == [restored]
+    assert client.get(f"/api/chores/{body['id']}").json() == restored
+
+    with Session(engine) as session:
+        row = session.get(Chore, body["id"])
+    assert row is not None
+    assert row.deleted_at is None
+
+
+def test_restore_active_chore_is_409(client, clock):
+    body = create(client)
+    clock.tick()
+
+    response = client.post(f"/api/chores/{body['id']}/restore")
+
+    assert response.status_code == 409
+    assert client.get(f"/api/chores/{body['id']}").json() == body  # updatedAt도 그대로
+
+
+def test_restore_missing_is_404(client):
+    assert client.post(f"/api/chores/{CLIENT_ID}/restore").status_code == 404
+
+
+def test_restore_twice_is_409(client):
+    body = create(client)
+    client.delete(f"/api/chores/{body['id']}")
+
+    assert client.post(f"/api/chores/{body['id']}/restore").status_code == 200
+    assert client.post(f"/api/chores/{body['id']}/restore").status_code == 409
+
+
 # --- 서버의 "오늘" ---
 
 

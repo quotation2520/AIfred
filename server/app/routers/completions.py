@@ -102,13 +102,42 @@ def _existing_result(existing: Completion, chore: Chore, response: Response) -> 
     return _result(existing, chore)
 
 
+_COMPLETION_NOT_FOUND = "완료 기록을 찾을 수 없다"
+
+
 @router.delete("/completions/{completion_id}", response_model=ChoreRead)
 def undo_completion(completion_id: str, session: SessionDep, now: NowDep) -> Chore:
     completion = session.get(Completion, completion_id)
     if completion is None or completion.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="완료 기록을 찾을 수 없다")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_COMPLETION_NOT_FOUND)
     chore = _active_chore_or_404(session, completion.chore_id)
+    return _undo(session, completion, chore, now)
 
+
+@router.delete("/chores/{chore_id}/completions/today", response_model=ChoreRead)
+def undo_today_completion(chore_id: str, session: SessionDep, today: TodayDep, now: NowDep) -> Chore:
+    """오늘(서버 기준) 완료한 기록 중 가장 최근 것 하나를 실행 취소한다.
+
+    실행 취소 알림이 사라진 뒤에도 그날 안에는 체크를 다시 눌러 완료를 취소할 수 있게 한다(UX U6).
+    """
+    chore = _active_chore_or_404(session, chore_id)
+    completion = session.exec(
+        select(Completion)
+        .where(
+            Completion.chore_id == chore.id,
+            Completion.done_on == today,
+            Completion.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .order_by(Completion.done_at.desc())  # type: ignore[attr-defined]
+        .limit(1)
+    ).first()
+    if completion is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_COMPLETION_NOT_FOUND)
+    return _undo(session, completion, chore, now)
+
+
+def _undo(session: Session, completion: Completion, chore: Chore, now: datetime) -> Chore:
+    """완료 기록을 soft delete하고 last_done_at을 max(previous_last_done_at, 남은 기록의 done_on)로 되돌린다."""
     latest_other = session.exec(
         select(func.max(Completion.done_on)).where(
             Completion.chore_id == chore.id,

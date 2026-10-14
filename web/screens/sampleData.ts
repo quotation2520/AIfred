@@ -67,7 +67,7 @@ export const SAMPLE_CHORES: ChoreRecord[] = [
   chore('sample-mop', '걸레질', 3, '2026-10-10', { icon: '🧽' }), // D-Day
   chore('sample-recycle', '분리수거', 4, '2026-10-10', { icon: '♻️' }), // D-1
   chore('sample-bedding', '이불 빨래', 14, '2026-10-01', { icon: '🛏️' }), // D-2
-  // 아주 긴 이름: 카드에서 말줄임으로 잘리는 모습을 보여 준다.
+  // 아주 긴 이름: 카드에서 두 줄까지 보인 뒤 말줄임되는 모습을 보여 준다(UX U1).
   chore('sample-window', '베란다 창틀과 방충망 먼지 털고 물걸레로 깨끗하게 닦기', 10, '2026-10-08', { icon: '🪟' }), // D-5
   chore('sample-fridge', '냉장고 청소', 30, '2026-09-20', { icon: '🧊', note: '유통기한 지난 것 정리' }), // D-7
 ]

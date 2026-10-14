@@ -26,6 +26,7 @@
   --motion-press: 150ms;
   --motion-state: 200ms;
   --motion-gauge: 250ms;
+  --motion-sheet: 250ms;
   /* 카드 아이콘 칸 폭. 게이지 줄을 이름 시작 위치에 맞추는 데도 쓴다. */
   --card-icon-size: 2rem;
 
@@ -183,14 +184,15 @@ main.dashboard {
   gap: 8px;
 }
 
-/* 윗줄은 편집 버튼, 아랫줄은 게이지 슬라이더, 오른쪽은 체크 버튼. 게이지는 편집 버튼 밖에 있어
-   게이지를 누르거나 끌어도 편집 화면으로 가지 않는다. */
+/* 윗줄은 편집 버튼(이름, 그 아래 배지·주기)과 "⋯" 메뉴, 아랫줄은 게이지 슬라이더, 오른쪽은 체크 버튼.
+   게이지는 편집 버튼 밖에 있어 게이지를 누르거나 끌어도 편집 화면으로 가지 않는다.
+   360px 폰에서도 이름이 윗줄 폭을 거의 다 쓰도록 배지와 주기는 이름 아래 둘째 줄로 내렸다 (UX U1). */
 .chore-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    'main check'
-    'gauge check';
+    'main menu check'
+    'gauge gauge check';
   min-width: 0;
   border: 2px solid transparent;
   border-radius: var(--radius);
@@ -216,11 +218,11 @@ main.dashboard {
   grid-area: main;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 12px 12px 2px;
+  padding: 10px 4px 2px 12px;
   border: 0;
-  border-radius: calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0 0;
+  border-radius: calc(var(--radius) - 2px) 0 0 0;
   background: none;
   font: inherit;
   color: inherit;
@@ -237,38 +239,44 @@ main.dashboard {
 .chore-card__icon {
   flex: none;
   width: var(--card-icon-size);
+  margin-top: 2px;
   font-size: 1.75rem;
   line-height: 1;
   text-align: center;
 }
 
-.chore-card__header {
+.chore-card__text {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-/* 이름이 길면 이름만 말줄임되고 주기 표시는 남는다. */
-.chore-card__title {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
+  flex-direction: column;
   gap: 4px;
 }
 
+/* 이름: 단어 단위로 두 줄까지 보이고, 그래도 길면 둘째 줄 끝에서 말줄임한다 (UX U1).
+   한 단어가 줄보다 길 때만 단어 안에서 끊는다. */
 .chore-card__name {
-  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 600;
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 이름 아래 둘째 줄: 배지, 주기 */
+.chore-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
 }
 
 .chore-card__interval {
-  flex: none;
   font-size: 0.85rem;
   color: var(--color-muted);
   white-space: nowrap;
@@ -281,18 +289,34 @@ main.dashboard {
   padding: 0 0 4px calc(12px + var(--card-icon-size));
 }
 
-/* 카드 탭 = 편집 단서 (UX U6) */
-.chore-card__chevron {
-  flex: none;
-  margin-left: -4px;
-  font-size: 1.5rem;
+/* "⋯" 편집·삭제 메뉴 (UX U2). 눈에 보이는 점은 작아도 누르는 영역은 44px이다. */
+.chore-card__menu {
+  grid-area: menu;
+  align-self: start;
+  width: 44px;
+  height: 44px;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 700;
   line-height: 1;
   color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+.chore-card__menu:active {
+  background: rgb(0 0 0 / 7%);
 }
 
 /* 완료 체크: 눌러도 되는 버튼으로 뚜렷하게 보인다 (UX U6). */
 .chore-card__check {
   grid-area: check;
+  position: relative;
   width: 48px;
   height: 48px;
   align-self: center;
@@ -321,14 +345,31 @@ main.dashboard {
   cursor: default;
 }
 
-/* 오늘 이미 완료함: 채워진 초록 체크. 바뀌는 순간 살짝 튀어 완료를 알린다. */
-.chore-card__check--done,
-.chore-card__check--done:disabled {
+/* 오늘 이미 완료함: 채워진 초록 체크. 바뀌는 순간 살짝 튀어 완료를 알린다.
+   다시 누르면 완료 취소이므로 눌리는 버튼 그대로 두고, 오른쪽 아래 작은 "↺"로 되돌릴 수 있음을 보여 준다 (UX U6). */
+.chore-card__check--done {
   border-color: var(--color-ok);
   background: var(--color-ok);
   color: #ffffff;
-  opacity: 1;
   animation: check-pop var(--motion-gauge) ease-out;
+}
+
+.chore-card__check-undo {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-ok);
+  border-radius: 50%;
+  background: var(--color-surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-ok);
 }
 
 @keyframes check-pop {
@@ -652,12 +693,249 @@ main.dashboard {
   transform: scale(0.92);
 }
 
-/* 추가·편집 화면 */
-.form-title {
-  margin: 0 0 16px;
-  font-size: 1.5rem;
+/* 시트 (UX R5): 아래에서 올라오고 뒤 화면은 어둡게 덮인다. 넓은 화면에서는 가운데 대화상자다.
+   머리줄과 아래 버튼 줄은 제자리에 있고 본문만 스크롤된다. 높이는 화면(키보드가 올라오면 줄어든 화면)에 맞춘다. */
+body.sheet-open {
+  overflow: hidden;
 }
 
+/* 시트가 열려 스크롤바가 사라져도(데스크톱) 대시보드가 옆으로 밀리지 않게 자리를 잡아 둔다. */
+html {
+  scrollbar-gutter: stable;
+}
+
+.sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.sheet-layer--closing {
+  pointer-events: none;
+}
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(17 22 28 / 45%);
+  animation: fade-in var(--motion-sheet) ease-out;
+}
+
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--max-width);
+  max-height: calc(100% - 24px);
+  margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 16px 16px 0 0;
+  background: var(--color-bg);
+  box-shadow: 0 -4px 24px rgb(0 0 0 / 18%);
+  outline: none;
+  animation: sheet-in var(--motion-sheet) cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 추가·편집: 화면 높이 가까이. 기본 목록에서 폼으로 바뀌어도 시트 높이가 그대로다. */
+.sheet-layer--full .sheet {
+  height: calc(100% - 24px);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* 아래로 끌어 닫는 손잡이 */
+.sheet__handle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet__handle::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.sheet__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px 16px;
+  touch-action: none;
+}
+
+.sheet__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+.sheet__actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.sheet__close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: inherit;
+  font-size: 1.25rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+.sheet__close:active {
+  background: rgb(0 0 0 / 7%);
+}
+
+/* 머리줄의 작은 버튼(편집 시트의 삭제). 저장 버튼과 멀리 떨어져 있다 (UX U2). */
+.sheet__header-button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sheet__header-button--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.sheet__header-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px 16px;
+}
+
+.sheet__form {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet__footer {
+  flex: none;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+@media (min-width: 720px) {
+  .sheet-layer {
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .sheet {
+    max-width: 560px;
+    max-height: 100%;
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgb(0 0 0 / 25%);
+    animation-name: dialog-in;
+  }
+
+  .sheet-layer--full .sheet {
+    height: min(760px, 100%);
+  }
+
+  .sheet-layer--menu .sheet {
+    max-width: 360px;
+  }
+
+  .sheet__handle {
+    display: none;
+  }
+
+  .sheet__header {
+    padding-top: 12px;
+  }
+}
+
+/* 카드 "⋯" 메뉴의 줄 (UX U2): 한 줄 전체가 52px 높이의 터치 영역이다. */
+.action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 12px;
+}
+
+.action-list__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+.action-list__item:active {
+  background: rgb(0 0 0 / 6%);
+}
+
+.action-list__item--danger {
+  color: var(--color-danger);
+}
+
+.action-list__icon {
+  width: 1.5rem;
+  text-align: center;
+}
+
+/* 추가·편집 폼 */
 .chore-form {
   display: flex;
   flex-direction: column;
@@ -703,15 +981,6 @@ main.dashboard {
 
 .form-actions .button {
   flex: 1;
-}
-
-/* 삭제는 저장·취소 줄과 간격을 두고 구분선 아래에 둔다 (UX U10). */
-.form-danger-zone {
-  display: flex;
-  flex-direction: column;
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--color-border);
 }
 
 .button {
@@ -794,18 +1063,7 @@ main.dashboard {
   }
 }
 
-/* 기본 목록 선택 화면 */
-.preset-screen__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.preset-screen__header .form-title {
-  margin-bottom: 4px;
-}
-
+/* 기본 목록 시트 */
 .preset-screen__hint {
   margin: 0 0 16px;
   color: var(--color-muted);
@@ -814,12 +1072,6 @@ main.dashboard {
 
 .preset-screen__custom {
   width: 100%;
-}
-
-.preset-screen__header-actions {
-  display: flex;
-  flex: none;
-  gap: 8px;
 }
 
 .preset-screen__error {
@@ -956,14 +1208,6 @@ main.dashboard {
   background: rgb(0 0 0 / 4%);
 }
 
-.preset-row__content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .preset-row__icon {
   flex: none;
   width: 1.75rem;
@@ -1000,19 +1244,63 @@ main.dashboard {
   color: var(--color-primary);
 }
 
-/* 편집 모드의 수정·삭제 */
+/* 편집 모드의 항목 줄 (UX U5): 이름이 단어 단위로 두 줄까지 보이고, 주기와 "추가됨"은 이름 아래 둘째 줄이다. */
+.preset-row--editing {
+  align-items: center;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.preset-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-row--editing .preset-row__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.preset-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.preset-row--editing .preset-row__added {
+  margin-left: 0;
+}
+
+/* 수정·삭제: 각각 44px 이상, 서로 12px 떨어져 있다. 삭제는 빨간 테두리와 휴지통 표시로 모양이 다르다. */
+.preset-row__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .preset-action {
   flex: none;
-  min-width: 44px;
+  min-width: 52px;
   min-height: 44px;
-  padding: 0 10px;
-  border: 0;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: none;
+  background: var(--color-surface);
   font: inherit;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--color-primary);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1021,6 +1309,7 @@ main.dashboard {
 }
 
 .preset-action--danger {
+  border-color: var(--color-danger);
   color: var(--color-danger);
 }
 
