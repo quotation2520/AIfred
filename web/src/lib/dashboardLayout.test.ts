@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chore } from './choreStatus'
-import { computeSections, freezeSections, layoutSections } from './dashboardLayout'
+import { computeSections } from './dashboardLayout'
 
 const TODAY = '2026-10-14'
 
@@ -17,32 +17,28 @@ const CHORES = [
 const ids = (list: Chore[]) => list.map((c) => c.id)
 
 describe('대시보드 배치', () => {
-  it('고정하지 않으면 오늘 할 일과 나머지로 나눈다 (PRD 4장 예시: 10/05 + 7일 → 10/14 D+2)', () => {
+  it('오늘 할 일과 나머지로 나눈다 (PRD 4장 예시: 10/05 + 7일 → 10/14 D+2)', () => {
     const sections = computeSections(CHORES, TODAY)
     expect(ids(sections.today)).toEqual(['a', 'b'])
     expect(ids(sections.other)).toEqual(['c'])
-    expect(layoutSections(CHORES, TODAY, null)).toEqual(sections)
   })
 
-  it('고정하면 완료해서 남은 일수가 바뀌어도 원래 영역과 순서를 지킨다', () => {
-    const frozen = freezeSections(computeSections(CHORES, TODAY))
+  it('완료해서 남은 일수가 바뀌면 바로 새 영역과 순서로 옮긴다', () => {
     const done = CHORES.map((c) => (c.id === 'a' ? { ...c, lastDoneAt: TODAY } : c))
-
-    const held = layoutSections(done, TODAY, frozen)
-    expect(ids(held.today)).toEqual(['a', 'b'])
-    expect(ids(held.other)).toEqual(['c'])
-    // 카드 내용은 최신 값이다.
-    expect(held.today[0].lastDoneAt).toBe(TODAY)
-
-    expect(ids(layoutSections(done, TODAY, null).other)).toEqual(['a', 'c'])
+    const sections = computeSections(done, TODAY)
+    expect(ids(sections.today)).toEqual(['b'])
+    // 화분 물주기 D-7, 냉장고 청소 D-17
+    expect(ids(sections.other)).toEqual(['a', 'c'])
   })
 
-  it('고정 뒤에 생긴 집안일은 원래 영역 끝에 붙이고, 사라진 집안일은 뺀다', () => {
-    const frozen = freezeSections(computeSections(CHORES, TODAY))
-    const changed = [...CHORES.filter((c) => c.id !== 'b'), chore('d', '빨래', 2, '2026-10-01')]
-
-    const held = layoutSections(changed, TODAY, frozen)
-    expect(ids(held.today)).toEqual(['a', 'd'])
-    expect(ids(held.other)).toEqual(['c'])
+  it('남은 일수가 같으면 이름순이고, 삭제된 집안일은 뺀다', () => {
+    const list = [
+      chore('x', '빨래', 7, '2026-10-10'), // D-3
+      chore('y', '걸레질', 7, '2026-10-10'), // D-3
+      { ...chore('z', '가습기', 7, '2026-10-10'), deletedAt: '2026-10-13T00:00:00Z' },
+    ]
+    const sections = computeSections(list, TODAY)
+    expect(ids(sections.today)).toEqual([])
+    expect(ids(sections.other)).toEqual(['y', 'x'])
   })
 })

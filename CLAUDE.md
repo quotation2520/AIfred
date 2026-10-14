@@ -52,7 +52,8 @@ npm run screens -- -g edit-form                                          # 시�
 ### 웹 구조
 - 라우터 없이 `App.tsx`의 상태로 대시보드와 추가·편집 화면을 오간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
-- 완료 체크는 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 실행 취소 알림이 떠 있는 동안에는 카드 배치를 고정(`lib/dashboardLayout.ts`)해서 목록이 갑자기 움직이지 않게 한다.
+- 완료 체크와 게이지 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 둘 다 `UndoToast`로 실행 취소를 제공한다. 카드는 항상 정렬 위치에 있고, 위치가 바뀌면 `useFlip`이 이동 애니메이션을 준다. 이동 중인 카드는 250ms 동안 체크를 받지 않는다. 애니메이션 시간은 `lib/motion.ts`에 있고, `prefers-reduced-motion`이면 끈다.
+- 게이지(`GaugeSlider`)는 끌어서 잔여일을 0~주기로 고치는 슬라이더다. PATCH { lastDoneAt }로 저장하고 완료 기록은 만들지 않는다(보정). 가로로 10px 이상 움직여야 조절을 시작해서 세로 스크롤과 구분한다.
 - 폰은 HTTP(`http://<PC IP>:5173`)로 접속하므로 HTTPS 전용 브라우저 API(`crypto.randomUUID`, 서비스 워커, 클립보드 등)를 쓸 수 없다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
 - 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.

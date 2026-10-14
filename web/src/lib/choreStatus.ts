@@ -114,6 +114,18 @@ export function computeStatus(
   }
 }
 
+/**
+ * 남은 일수가 remaining이 되는 마지막 수행일 = 오늘 − (주기 − 남은 일수).
+ * remainingDays의 역산이다: remainingDays(lastDoneAtForRemaining(t, n, r), n, t) === r.
+ */
+export function lastDoneAtForRemaining(today: string, intervalDays: number, remaining: number): string {
+  assertInterval(intervalDays)
+  if (!Number.isInteger(remaining)) {
+    throw new RangeError(`남은 일수는 정수여야 한다: ${remaining}`)
+  }
+  return fromDayNumber(toDayNumber(today) - (intervalDays - remaining))
+}
+
 /** 이름 비교. 서버(Python 문자열 비교)와 결과를 맞추기 위해 로캘 비교 대신 코드 단위 비교를 쓴다. */
 function compareNames(a: string, b: string): number {
   if (a < b) return -1

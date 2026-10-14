@@ -22,6 +22,13 @@
   --color-today-bg: #fff4e6;
   --color-gauge-track: #e6e9ed;
 
+  /* 움직임 시간 (lib/motion.ts와 맞춘다) */
+  --motion-press: 150ms;
+  --motion-state: 200ms;
+  --motion-gauge: 250ms;
+  /* 카드 아이콘 칸 폭. 게이지 줄을 이름 시작 위치에 맞추는 데도 쓴다. */
+  --card-icon-size: 2rem;
+
   --radius: 12px;
   --max-width: 640px;
   --fab-size: 56px;
@@ -99,6 +106,17 @@ main.dashboard {
   margin-top: 24px;
 }
 
+/* "오늘 할 일이 없어요"는 마지막 카드가 빠져나간 자리에 부드럽게 나타난다. */
+.empty {
+  animation: fade-in var(--motion-gauge) ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* 오류 상자 (UX U5): 짧은 제목, 다음 행동 안내, 작은 회색 기술 정보 */
 .error-notice {
   padding: 16px;
@@ -165,14 +183,22 @@ main.dashboard {
   gap: 8px;
 }
 
+/* 윗줄은 편집 버튼, 아랫줄은 게이지 슬라이더, 오른쪽은 체크 버튼. 게이지는 편집 버튼 밖에 있어
+   게이지를 누르거나 끌어도 편집 화면으로 가지 않는다. */
 .chore-card {
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main check'
+    'gauge check';
   min-width: 0;
   border: 2px solid transparent;
   border-radius: var(--radius);
   background: var(--color-surface);
   box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  transition:
+    background-color var(--motion-state) ease,
+    border-color var(--motion-state) ease;
 }
 
 .chore-card--today {
@@ -187,39 +213,50 @@ main.dashboard {
 }
 
 .chore-card__main {
-  flex: 1;
+  grid-area: main;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 12px 12px 2px;
   border: 0;
+  border-radius: calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0 0;
   background: none;
   font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+/* 누름 피드백 */
+.chore-card__main:active {
+  background: rgb(0 0 0 / 5%);
 }
 
 .chore-card__icon {
   flex: none;
+  width: var(--card-icon-size);
   font-size: 1.75rem;
   line-height: 1;
-}
-
-.chore-card__body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  text-align: center;
 }
 
 .chore-card__header {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+/* 이름이 길면 이름만 말줄임되고 주기 표시는 남는다. */
+.chore-card__title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .chore-card__name {
@@ -228,6 +265,20 @@ main.dashboard {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+}
+
+.chore-card__interval {
+  flex: none;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+/* 게이지 줄: 트랙이 이름 시작 위치에서 시작한다(슬라이더 안쪽 여백 12px만큼 덜 들인다). */
+.chore-card__gauge {
+  grid-area: gauge;
+  min-width: 0;
+  padding: 0 0 4px calc(12px + var(--card-icon-size));
 }
 
 /* 카드 탭 = 편집 단서 (UX U6) */
@@ -241,9 +292,9 @@ main.dashboard {
 
 /* 완료 체크: 눌러도 되는 버튼으로 뚜렷하게 보인다 (UX U6). */
 .chore-card__check {
-  flex: none;
+  grid-area: check;
   width: 48px;
-  min-height: 48px;
+  height: 48px;
   align-self: center;
   margin: 8px 8px 8px 0;
   border: 2px solid var(--color-primary);
@@ -253,6 +304,16 @@ main.dashboard {
   font-weight: 700;
   color: var(--color-primary);
   cursor: pointer;
+  transition:
+    transform var(--motion-press) ease,
+    opacity var(--motion-state) ease,
+    background-color var(--motion-state) ease,
+    border-color var(--motion-state) ease,
+    color var(--motion-state) ease;
+}
+
+.chore-card__check:active:not(:disabled) {
+  transform: scale(0.88);
 }
 
 .chore-card__check:disabled {
@@ -260,13 +321,26 @@ main.dashboard {
   cursor: default;
 }
 
-/* 오늘 이미 완료함: 채워진 초록 체크 */
+/* 오늘 이미 완료함: 채워진 초록 체크. 바뀌는 순간 살짝 튀어 완료를 알린다. */
 .chore-card__check--done,
 .chore-card__check--done:disabled {
   border-color: var(--color-ok);
   background: var(--color-ok);
   color: #ffffff;
   opacity: 1;
+  animation: check-pop var(--motion-gauge) ease-out;
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .badge {
@@ -280,6 +354,9 @@ main.dashboard {
   font-weight: 700;
   color: #ffffff;
   white-space: nowrap;
+  transition:
+    background-color var(--motion-state) ease,
+    box-shadow var(--motion-state) ease;
 }
 
 .badge--ok {
@@ -315,18 +392,93 @@ main.dashboard {
   line-height: 1;
 }
 
+/* 게이지 슬라이더: 손가락이 닿는 높이 44px, 그 가운데 8px 트랙과 손잡이.
+   세로 스크롤은 브라우저에 맡기고(pan-y) 가로로 끌 때만 조절한다. */
+.gauge-slider {
+  --track-inset: 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--track-inset);
+  overflow: hidden;
+  border-radius: 8px;
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+.gauge-slider--dragging {
+  cursor: grabbing;
+}
+
+.gauge-slider[aria-disabled='true'] {
+  cursor: default;
+}
+
+.gauge-slider:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .gauge {
+  position: relative;
   display: block;
+  flex: 1;
   height: 8px;
   border-radius: 999px;
   background: var(--color-gauge-track);
   overflow: hidden;
+  transition: background-color var(--motion-state) ease;
 }
 
+/* 채움은 폭 대신 transform으로 움직인다(레이아웃 계산 없음). */
 .gauge__fill {
-  display: block;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   border-radius: inherit;
+  transition:
+    transform var(--motion-gauge) ease,
+    background-color var(--motion-state) ease;
+}
+
+/* 손잡이 자리: 트랙과 폭이 같은 레일을 퍼센트만큼 옮기고, 손잡이는 레일 왼쪽 끝에 둔다. */
+.gauge__thumb-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--track-inset);
+  right: var(--track-inset);
+  pointer-events: none;
+  transition: transform var(--motion-gauge) ease;
+}
+
+.gauge__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 3px solid var(--color-muted);
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition:
+    transform var(--motion-press) ease,
+    border-color var(--motion-state) ease;
+}
+
+/* 끄는 동안에는 손가락을 바로 따라오게 전환을 끈다. 조절 중인 손잡이는 조금 커진다. */
+.gauge-slider--dragging .gauge__fill,
+.gauge-slider--dragging .gauge__thumb-rail {
+  transition: none;
+}
+
+.gauge-slider--active .gauge__thumb {
+  transform: scale(1.2);
 }
 
 .chore-card--ok .gauge__fill {
@@ -335,6 +487,22 @@ main.dashboard {
 
 .chore-card--soon .gauge__fill {
   background: var(--color-soon);
+}
+
+.chore-card--ok .gauge__thumb {
+  border-color: var(--color-ok);
+}
+
+.chore-card--soon .gauge__thumb {
+  border-color: var(--color-soon);
+}
+
+.chore-card--today .gauge__thumb {
+  border-color: var(--color-today);
+}
+
+.chore-card--overdue .gauge__thumb {
+  border-color: var(--color-overdue);
 }
 
 /* 오늘·지연: 값은 0%지만 막대 자체가 상태를 보여 준다 (UX U8). */
@@ -388,6 +556,27 @@ main.dashboard {
   background: #24292f;
   color: #ffffff;
   box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  animation: toast-in var(--motion-state) ease-out;
+}
+
+/* 닫히는 알림: 흐려지며 내려간다. 그동안 누를 수 없다. */
+.toast--leaving {
+  animation: toast-out var(--motion-state) ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
 }
 
 .toast__text {
@@ -409,6 +598,11 @@ main.dashboard {
   font-weight: 700;
   color: #9ec2ff;
   cursor: pointer;
+  transition: background-color var(--motion-press) ease;
+}
+
+.toast__action:active {
+  background: rgb(255 255 255 / 14%);
 }
 
 /* 완료·실행 취소 실패 안내: 하단 막대 바로 위 */
@@ -437,6 +631,11 @@ main.dashboard {
   line-height: 1;
   box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
   cursor: pointer;
+  transition: transform var(--motion-press) ease;
+}
+
+.fab:active {
+  transform: scale(0.92);
 }
 
 /* 추가·편집 화면 */
@@ -510,6 +709,11 @@ main.dashboard {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  transition: transform var(--motion-press) ease;
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .button:disabled {
@@ -532,4 +736,23 @@ main.dashboard {
 .button--danger {
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+
+/* 움직임 줄이기 설정: 전환과 애니메이션을 끄고, 누름 축소도 하지 않는다.
+   카드 위치 이동(useFlip)과 알림 사라짐(UndoToast)은 스크립트에서 따로 끈다. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+
+  .fab:active,
+  .button:active,
+  .chore-card__check:active,
+  .gauge-slider--active .gauge__thumb {
+    transform: none !important;
+  }
 }

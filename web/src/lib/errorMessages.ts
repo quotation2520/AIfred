@@ -58,6 +58,23 @@ export function undoErrorText(error: unknown): ErrorText {
   return { title: '실행 취소하지 못했어요.', hint, detail: technicalDetail(error) }
 }
 
+/** 게이지로 잔여일을 조절했는데 저장하지 못함. 카드는 원래 상태로 돌아간다. */
+export function adjustErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `${CONNECTION_HINT} 게이지를 다시 조절해 주세요.`
+  if (status === 404) hint = '이미 삭제된 집안일일 수 있어요. 화면을 새로고침해 목록을 다시 확인해 주세요.'
+  else if (status === 422) hint = '서버가 받지 않는 날짜예요. 카드를 눌러 마지막 수행일을 직접 고쳐 주세요.'
+  return { title: '남은 일수를 저장하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
+/** 잔여일 조절의 실행 취소 실패. 조절한 날짜가 서버에 그대로 남아 있다. */
+export function adjustUndoErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `조절한 날짜가 그대로 남아 있어요. ${CONNECTION_HINT} 카드를 눌러 마지막 수행일을 고쳐 주세요.`
+  if (status === 404) hint = '이미 삭제된 집안일일 수 있어요. 화면을 새로고침해 목록을 다시 확인해 주세요.'
+  return { title: '실행 취소하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
 export function deleteErrorText(error: unknown): ErrorText {
   const hint = statusOf(error) === 404 ? MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
   return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }

@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type ChoreRecord, completeChore, listChores, newCompletionId, undoCompletion } from '../api/chores'
-import { summarize } from '../lib/choreStatus'
-import { type FrozenLayout, freezeSections, layoutSections } from '../lib/dashboardLayout'
-import { type ErrorText, completeErrorText, loadErrorText, undoErrorText } from '../lib/errorMessages'
+import {
+  type ChoreRecord,
+  completeChore,
+  listChores,
+  newCompletionId,
+  undoCompletion,
+  updateChore,
+} from '../api/chores'
+import { badgeOf, lastDoneAtForRemaining, summarize } from '../lib/choreStatus'
+import { computeSections } from '../lib/dashboardLayout'
+import {
+  type ErrorText,
+  adjustErrorText,
+  adjustUndoErrorText,
+  completeErrorText,
+  loadErrorText,
+  undoErrorText,
+} from '../lib/errorMessages'
 import { formatKoreanDate } from '../lib/formatDate'
+import { useFlip } from '../lib/useFlip'
 import ChoreCard from './ChoreCard'
 import ErrorNotice from './ErrorNotice'
+import UndoToast from './UndoToast'
 
 /** 실행 취소 알림이 떠 있는 시간(ms) */
 export const UNDO_TOAST_MS = 5000
@@ -21,25 +37,29 @@ type LoadState =
   | { kind: 'error'; error: ErrorText }
   | { kind: 'ready'; chores: ChoreRecord[] }
 
-/** 실행 취소 알림. 연달아 완료하면 마지막 것만 보여 준다(앞의 것도 서버에는 이미 저장돼 있다). */
-interface UndoToast {
-  completionId: string
-  choreId: string
-  name: string
-  /** 체크하기 전의 집안일. 실행 취소 때 화면을 바로 되돌리는 데 쓴다. */
-  previous: ChoreRecord
-}
+/**
+ * 실행 취소 알림. 연달아 완료·조절하면 마지막 것만 보여 준다(앞의 것도 서버에는 이미 저장돼 있다).
+ * previous는 바꾸기 전의 집안일로, 실행 취소 때 화면을 바로 되돌리는 데 쓴다.
+ */
+type UndoAction =
+  | { kind: 'complete'; key: string; completionId: string; choreId: string; name: string; previous: ChoreRecord }
+  | { kind: 'adjust'; key: string; choreId: string; name: string; badge: string; previous: ChoreRecord }
 
 function laterDate(a: string, b: string): string {
   return a >= b ? a : b
 }
 
+function toastText(action: UndoAction): string {
+  return action.kind === 'complete' ? `${action.name} 완료` : `${action.name} → ${action.badge}`
+}
+
 /**
- * PRD 6장 대시보드: 상단 요약, 오늘 할 일(F5), 그 밖의 집안일(F2, F4), 완료 체크와 실행 취소(F3).
+ * PRD 6장 대시보드: 상단 요약, 오늘 할 일(F5), 그 밖의 집안일(F2, F4), 완료 체크와 실행 취소(F3), 게이지로 잔여일 조절.
  * 화면이 열릴 때마다 목록을 불러온다. 날짜(today)가 바뀌면 같은 목록으로 다시 계산한다.
  *
- * 완료 체크는 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답의 집안일로 확정한다. 실패하면 원래대로 되돌린다.
- * 요청이 진행 중이거나 실행 취소 알림이 떠 있는 동안에는 카드 배치를 고정해 목록이 뛰지 않게 한다 (UX U6).
+ * 완료 체크와 잔여일 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답의 집안일로 확정한다. 실패하면 원래대로 되돌린다.
+ * 카드는 항상 남은 일수 순서의 제자리에 놓이고, 자리를 옮길 때는 위치 이동 애니메이션(useFlip)으로 보여 준다.
+ * 옮겨 가는 동안에는 그 카드의 체크를 받지 않는다. 연달아 체크하다가 손가락 아래로 미끄러져 온 카드를 잘못 누르지 않게 하려는 것이다.
  */
 function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
@@ -47,9 +67,10 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set())
   // 같은 렌더 안에서 두 번 눌러도 막을 수 있도록 진행 중 목록을 ref에도 둔다.
   const pendingRef = useRef<ReadonlySet<string>>(pending)
-  const [toast, setToast] = useState<UndoToast | null>(null)
-  const [frozen, setFrozen] = useState<FrozenLayout | null>(null)
+  const [toast, setToast] = useState<UndoAction | null>(null)
+  const toastSeq = useRef(0)
   const [actionError, setActionError] = useState<ErrorText | null>(null)
+  const flip = useFlip()
 
   useEffect(() => {
     let cancelled = false
@@ -94,16 +115,19 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
     setPending(next)
   }, [])
 
+  const nextToastKey = () => {
+    toastSeq.current += 1
+    return String(toastSeq.current)
+  }
+
   const chores = state.kind === 'ready' ? state.chores : []
   const summary = summarize(chores, today)
-  // 진행 중인 요청이나 실행 취소 알림이 있으면 체크한 순간의 배치를 유지한다.
-  const holding = pending.size > 0 || toast !== null
-  const sections = layoutSections(chores, today, holding ? frozen : null)
+  const sections = computeSections(chores, today)
   const hasChores = sections.today.length + sections.other.length > 0
 
   const handleComplete = (chore: ChoreRecord) => {
     if (pendingRef.current.has(chore.id) || chore.lastDoneAt === today) return
-    if (!holding) setFrozen(freezeSections(sections))
+    if (flip.isMoving(chore.id)) return
     const previous = chore
     const completionId = newCompletionId()
     markPending(chore.id, true)
@@ -115,7 +139,7 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
       .then(
         ({ chore: saved }) => {
           replaceChore(saved.id, () => saved)
-          setToast({ completionId, choreId: saved.id, name: saved.name, previous })
+          setToast({ kind: 'complete', key: nextToastKey(), completionId, choreId: saved.id, name: saved.name, previous })
         },
         (error: unknown) => {
           replaceChore(chore.id, () => previous)
@@ -125,21 +149,60 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
       .finally(() => markPending(chore.id, false))
   }
 
+  /**
+   * 게이지로 남은 일수를 고친다. 새 마지막 수행일 = 오늘 − (주기 − 남은 일수).
+   * 완료 기록은 만들지 않는 보정이다. 날짜가 그대로면 저장하지 않는다.
+   */
+  const handleAdjust = (chore: ChoreRecord, remaining: number) => {
+    if (pendingRef.current.has(chore.id)) return
+    const lastDoneAt = lastDoneAtForRemaining(today, chore.intervalDays, remaining)
+    if (lastDoneAt === chore.lastDoneAt) return
+    const previous = chore
+    markPending(chore.id, true)
+    setActionError(null)
+    replaceChore(chore.id, (current) => ({ ...current, lastDoneAt }))
+
+    updateChore(chore.id, { lastDoneAt })
+      .then(
+        (saved) => {
+          replaceChore(saved.id, () => saved)
+          setToast({
+            kind: 'adjust',
+            key: nextToastKey(),
+            choreId: saved.id,
+            name: saved.name,
+            badge: badgeOf(remaining),
+            previous,
+          })
+        },
+        (error: unknown) => {
+          replaceChore(chore.id, () => previous)
+          setActionError(adjustErrorText(error))
+        },
+      )
+      .finally(() => markPending(chore.id, false))
+  }
+
   const handleUndo = () => {
     if (!toast || pendingRef.current.has(toast.choreId)) return
-    const { completionId, choreId, previous } = toast
-    const completed = chores.find((chore) => chore.id === choreId)
+    const action = toast
+    const { choreId, previous } = action
+    const changed = chores.find((chore) => chore.id === choreId)
     setToast(null)
     markPending(choreId, true)
     setActionError(null)
     replaceChore(choreId, (current) => ({ ...current, lastDoneAt: previous.lastDoneAt }))
 
-    undoCompletion(completionId)
+    const request =
+      action.kind === 'complete'
+        ? undoCompletion(action.completionId)
+        : updateChore(choreId, { lastDoneAt: previous.lastDoneAt })
+    request
       .then(
         (saved) => replaceChore(saved.id, () => saved),
         (error: unknown) => {
-          if (completed) replaceChore(choreId, () => completed)
-          setActionError(undoErrorText(error))
+          if (changed) replaceChore(choreId, () => changed)
+          setActionError(action.kind === 'complete' ? undoErrorText(error) : adjustUndoErrorText(error))
         },
       )
       .finally(() => markPending(choreId, false))
@@ -148,10 +211,12 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const renderCard = (chore: ChoreRecord) => (
     <ChoreCard
       key={chore.id}
+      itemRef={flip.register(chore.id)}
       chore={chore}
       today={today}
       onOpen={onEdit}
       onComplete={handleComplete}
+      onAdjust={handleAdjust}
       busy={pending.has(chore.id)}
     />
   )
@@ -241,14 +306,7 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
       <div className="bottom-bar">
         <div className="bottom-bar__inner">
           <div className="bottom-bar__notice" aria-live="polite">
-            {toast && (
-              <div className="toast" data-testid="undo-toast">
-                <span className="toast__text">{toast.name} 완료</span>
-                <button type="button" className="toast__action" onClick={handleUndo}>
-                  실행 취소
-                </button>
-              </div>
-            )}
+            <UndoToast message={toast && { key: toast.key, text: toastText(toast) }} onUndo={handleUndo} />
           </div>
           <button type="button" className="fab" onClick={onAdd} aria-label="집안일 추가">
             +

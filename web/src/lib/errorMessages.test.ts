@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../api/chores'
 import {
+  adjustErrorText,
+  adjustUndoErrorText,
   completeErrorText,
   deleteErrorText,
   loadErrorText,
@@ -39,6 +41,19 @@ describe('오류 문구', () => {
     expect(undoErrorText(new ApiError(500, 'x')).title).toBe('실행 취소하지 못했어요.')
     expect(undoErrorText(new ApiError(500, 'x')).hint).toContain('완료 기록은 그대로 남아 있어요.')
     expect(undoErrorText(new ApiError(404, 'x')).hint).toContain('이미 취소됐거나')
+  })
+
+  it('잔여일 조절과 그 실행 취소 오류는 상태 코드별로 안내가 다르다', () => {
+    expect(adjustErrorText(new TypeError('Failed to fetch'))).toEqual({
+      title: '남은 일수를 저장하지 못했어요.',
+      hint: 'PC 서버가 켜져 있는지, 집 Wi-Fi에 연결돼 있는지 확인한 뒤 게이지를 다시 조절해 주세요.',
+      detail: 'Failed to fetch',
+    })
+    expect(adjustErrorText(new ApiError(404, 'x')).hint).toContain('이미 삭제된 집안일')
+    expect(adjustErrorText(new ApiError(422, [])).hint).toContain('마지막 수행일을 직접 고쳐')
+    expect(adjustUndoErrorText(new ApiError(500, 'x')).title).toBe('실행 취소하지 못했어요.')
+    expect(adjustUndoErrorText(new ApiError(500, 'x')).hint).toContain('조절한 날짜가 그대로 남아 있어요.')
+    expect(adjustUndoErrorText(new ApiError(404, 'x')).hint).toContain('이미 삭제된 집안일')
   })
 
   it('삭제 오류도 404와 그 밖을 나눈다', () => {

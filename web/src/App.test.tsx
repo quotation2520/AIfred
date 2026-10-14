@@ -6,6 +6,7 @@ import App from './App'
 import type { ChoreRecord } from './api/chores'
 import { MAX_INTERVAL_DAYS, MAX_LAST_DONE_AT, MIN_LAST_DONE_AT } from './components/ChoreForm'
 import { UNDO_TOAST_MS } from './components/Dashboard'
+import { MOVE_MS } from './lib/motion'
 import { jsonResponse, mockFetch, record } from './test/fetchMock'
 
 const TODAY = '2026-10-14'
@@ -111,8 +112,11 @@ describe('대시보드', () => {
     expect(within(overdue).getByText('D+2')).toBeTruthy()
     // 색 없이도 알 수 있는 단서: 배지 안 "!" 표시와 읽기용 "2일 지남"
     expect(overdue.querySelector('.badge__alert')?.textContent).toBe('!')
-    expect(within(overdue).getByRole('button', { name: '화분 물주기 D+2 (2일 지남) 편집' })).toBeTruthy()
-    expect(within(overdue).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('0')
+    expect(within(overdue).getByRole('button', { name: '화분 물주기 7일마다 D+2 (2일 지남) 편집' })).toBeTruthy()
+    // 게이지 슬라이더는 0~주기 범위라 지연이면 0이고, 읽기용 값으로 지난 날수를 알린다.
+    const overdueGauge = within(overdue).getByRole('slider', { name: '화분 물주기 남은 일수' })
+    expect(overdueGauge.getAttribute('aria-valuenow')).toBe('0')
+    expect(overdueGauge.getAttribute('aria-valuetext')).toBe('2일 지남')
     expect(within(overdue).getByText('🪴')).toBeTruthy()
 
     const today = cardOf(todaySection, '걸레질')
@@ -127,8 +131,35 @@ describe('대시보드', () => {
     const ok = cardOf(others, '냉장고 청소')
     expect(ok.getAttribute('data-status')).toBe('ok')
     expect(within(ok).getByText('D-17')).toBeTruthy()
-    // 17 / 30 = 56.67%
-    expect(within(ok).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('57')
+    const okGauge = within(ok).getByRole('slider')
+    expect(okGauge.getAttribute('aria-valuemin')).toBe('0')
+    expect(okGauge.getAttribute('aria-valuemax')).toBe('30')
+    expect(okGauge.getAttribute('aria-valuenow')).toBe('17')
+    expect(okGauge.getAttribute('aria-valuetext')).toBe('17일 남음')
+    // 17 / 30 = 56.67%: 채움은 transform으로 움직인다.
+    const fill = ok.querySelector<HTMLElement>('.gauge__fill')
+    expect(fill?.style.transform).toMatch(/^translateX\(-43\.33\d*%\)$/)
+  })
+
+  it('이름 옆에 주기를 표시한다: 1일은 "매일", 나머지는 "N일마다"', async () => {
+    await renderDashboard([
+      record('a', '설거지', 1, '2026-10-14'),
+      record('b', '화분 물주기', 7, '2026-10-12'),
+      record('c', '이불 빨래', 14, '2026-10-12'),
+      record('d', '아주 아주 긴 이름의 집안일 베란다 창틀 먼지 닦기', 30, '2026-10-12'),
+    ])
+    const others = section('그 밖의 집안일')
+    const intervalOf = (name: string) => cardOf(others, name).querySelector('.chore-card__interval')?.textContent
+    expect(intervalOf('설거지')).toBe('· 매일')
+    expect(intervalOf('화분 물주기')).toBe('· 7일마다')
+    expect(intervalOf('이불 빨래')).toBe('· 14일마다')
+    // 이름과 주기는 따로 있어서 이름만 말줄임된다.
+    const long = cardOf(others, '아주 아주 긴 이름의 집안일 베란다 창틀 먼지 닦기')
+    expect(long.querySelector('.chore-card__name')?.textContent).toBe('아주 아주 긴 이름의 집안일 베란다 창틀 먼지 닦기')
+    expect(long.querySelector('.chore-card__interval')?.textContent).toBe('· 30일마다')
+    // 편집 버튼의 읽기용 이름에도 주기가 들어가고, "… 편집" 형태는 그대로다.
+    expect(within(cardOf(others, '설거지')).getByRole('button', { name: '설거지 매일 D-1 편집' })).toBeTruthy()
+    expect(within(cardOf(others, '이불 빨래')).getByRole('button', { name: /^이불 빨래 .* 편집$/ })).toBeTruthy()
   })
 
   it('완료 체크 버튼이 켜져 있고, 카드에 편집 단서(">")가 있다', async () => {
@@ -136,7 +167,7 @@ describe('대시보드', () => {
     const card = cardOf(section('오늘 할 일'), '걸레질')
     const check = within(card).getByRole('button', { name: '걸레질 완료 체크' }) as HTMLButtonElement
     expect(check.disabled).toBe(false)
-    const edit = within(card).getByRole('button', { name: '걸레질 D-Day 편집' })
+    const edit = within(card).getByRole('button', { name: '걸레질 3일마다 D-Day 편집' })
     expect(edit.querySelector('.chore-card__chevron')?.textContent).toBe('›')
   })
 
@@ -284,7 +315,7 @@ describe('완료 체크 (F3)', () => {
   }
 
   function gaugeOf(region: HTMLElement, name: string): string | null {
-    return within(cardOf(region, name)).getByRole('progressbar').getAttribute('aria-valuenow')
+    return within(cardOf(region, name)).getByRole('slider').getAttribute('aria-valuenow')
   }
 
   const WATERING = CHORES[1] // 화분 물주기, D+2
@@ -303,10 +334,13 @@ describe('완료 체크 (F3)', () => {
 
     await user.click(checkButton(todaySection, '화분 물주기'))
 
-    // 응답 전: 게이지가 차고 배지가 바뀌고, 버튼은 "오늘 완료함"으로 눌리지 않는다.
-    expect(badgeOf(todaySection, '화분 물주기')).toBe('D-7')
-    expect(gaugeOf(todaySection, '화분 물주기')).toBe('100')
-    const check = checkButton(todaySection, '화분 물주기')
+    // 응답 전: 카드가 바로 그 밖의 집안일의 제자리로 가고, 게이지가 차고 배지가 바뀌고,
+    // 버튼은 "오늘 완료함"으로 눌리지 않는다.
+    const others = section('그 밖의 집안일')
+    expect(cardNames(others)).toEqual(['이불 빨래', '화분 물주기', '냉장고 청소'])
+    expect(badgeOf(others, '화분 물주기')).toBe('D-7')
+    expect(gaugeOf(others, '화분 물주기')).toBe('7')
+    const check = checkButton(others, '화분 물주기')
     expect(check.getAttribute('aria-label')).toBe('화분 물주기 오늘 완료함')
     expect(check.disabled).toBe(true)
     // 요약은 바로 바뀐다.
@@ -323,7 +357,7 @@ describe('완료 체크 (F3)', () => {
     const toast = await screen.findByTestId('undo-toast')
     expect(toast.querySelector('.toast__text')?.textContent).toBe('화분 물주기 완료')
     expect(within(toast).getByRole('button', { name: '실행 취소' })).toBeTruthy()
-    expect(badgeOf(todaySection, '화분 물주기')).toBe('D-7')
+    expect(badgeOf(section('그 밖의 집안일'), '화분 물주기')).toBe('D-7')
     // 알림은 하단 막대 안, "+" 버튼과 같은 줄의 왼쪽에 있다.
     expect(toast.closest('.bottom-bar__inner')?.contains(fab())).toBe(true)
   })
@@ -424,7 +458,7 @@ describe('완료 체크 (F3)', () => {
     expect(calls.some((c) => c.method === 'POST')).toBe(false)
   })
 
-  it('실행 취소 알림이 떠 있는 동안은 완료한 카드가 제자리에 있고, 알림이 닫히면 옮겨진다', async () => {
+  it('체크하면 실행 취소 알림이 떠 있어도 카드가 바로 남은 일수 순서의 제자리로 옮겨진다', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     mockFetch({
@@ -440,31 +474,354 @@ describe('완료 체크 (F3)', () => {
 
     // 연달아 두 개를 완료한다. 알림은 마지막 것만 보인다.
     await user.click(checkButton(section('오늘 할 일'), '분리수거'))
+    // 응답을 기다리기 전에 이미 옮겨져 있다.
+    expect(cardNames(section('오늘 할 일'))).toEqual(['화분 물주기', '걸레질'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '분리수거', '냉장고 청소'])
     await screen.findByText('분리수거 완료')
+
     await user.click(checkButton(section('오늘 할 일'), '걸레질'))
     await screen.findByText('걸레질 완료')
     expect(screen.queryByText('분리수거 완료')).toBeNull()
 
-    // 알림이 떠 있는 동안: 배치는 그대로, 카드 내용과 요약은 바뀐다.
-    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
-    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '냉장고 청소'])
-    expect(badgeOf(section('오늘 할 일'), '분리수거')).toBe('D-7')
-    expect(badgeOf(section('오늘 할 일'), '걸레질')).toBe('D-3')
+    // 알림이 떠 있는 동안에도 배치는 지금 값(남은 일수 순: D-1, D-3, D-7, D-17) 기준이다.
+    expect(cardNames(section('오늘 할 일'))).toEqual(['화분 물주기'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '걸레질', '분리수거', '냉장고 청소'])
+    expect(badgeOf(section('그 밖의 집안일'), '분리수거')).toBe('D-7')
+    expect(badgeOf(section('그 밖의 집안일'), '걸레질')).toBe('D-3')
     expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 1개 (밀린 일 1개 포함)')
-
-    // 마지막 완료 뒤 거의 5초가 지나도 아직 그대로다.
-    act(() => {
-      vi.advanceTimersByTime(UNDO_TOAST_MS - 100)
-    })
     expect(screen.getByTestId('undo-toast')).toBeTruthy()
-    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
 
+    // 알림이 닫혀도 배치는 그대로다(한꺼번에 옮겨지지 않는다).
     act(() => {
-      vi.advanceTimersByTime(200)
+      vi.advanceTimersByTime(UNDO_TOAST_MS + 100)
     })
     expect(screen.queryByTestId('undo-toast')).toBeNull()
     expect(cardNames(section('오늘 할 일'))).toEqual(['화분 물주기'])
     expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '걸레질', '분리수거', '냉장고 청소'])
+  })
+
+  describe('위치 이동 애니메이션', () => {
+    let now = 1000
+    const animate = vi.fn(() => ({ cancel() {} }) as unknown as Animation)
+
+    /** 카드 높이 100px로 문서 순서대로 쌓인 것처럼 위치를 돌려준다. */
+    function fakeLayout() {
+      vi.spyOn(performance, 'now').mockImplementation(() => now)
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const index = Array.from(document.querySelectorAll('li.chore-card')).indexOf(this)
+        return { x: 0, y: index * 100, left: 0, top: index * 100, width: 300, height: 90, right: 300, bottom: index * 100 + 90 } as DOMRect
+      })
+      Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true, writable: true })
+    }
+
+    afterEach(() => {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).animate
+      animate.mockClear()
+      now = 1000
+    })
+
+    it('옮겨 간 카드는 이전 자리에서 미끄러져 오고, 움직이는 동안(250ms)은 그 카드의 체크를 받지 않는다', async () => {
+      fakeLayout()
+      const { calls } = mockFetch({
+        'GET /api/chores': () => jsonResponse(CHORES),
+        'POST /api/chores/e/completions': (call) =>
+          jsonResponse(completed(CHORES[4], (call.body as { id: string }).id), 201),
+        'POST /api/chores/a/completions': (call) =>
+          jsonResponse(completed(WATERING, (call.body as { id: string }).id), 201),
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+      // 처음 나타날 때는 떠오르는 효과만 있다.
+      expect(animate).toHaveBeenCalledTimes(CHORES.length)
+      animate.mockClear()
+
+      fireEvent.click(checkButton(section('오늘 할 일'), '분리수거'))
+      await screen.findByText('분리수거 완료')
+      // 분리수거(0→3번째), 화분 물주기(1→0), 걸레질(2→1), 이불 빨래(3→2)가 옮겨졌다. 냉장고 청소는 그대로다.
+      expect(animate).toHaveBeenCalledTimes(4)
+      expect(animate).toHaveBeenCalledWith(
+        [{ transform: 'translate(0px, 100px)' }, { transform: 'none' }],
+        expect.objectContaining({ duration: MOVE_MS }),
+      )
+
+      // 손가락 아래로 미끄러져 온 화분 물주기를 바로 눌러도 무시한다.
+      fireEvent.click(checkButton(section('오늘 할 일'), '화분 물주기'))
+      expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/chores/e/completions'])
+
+      // 이동이 끝나면 누를 수 있다.
+      now += MOVE_MS + 1
+      fireEvent.click(checkButton(section('오늘 할 일'), '화분 물주기'))
+      expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual([
+        '/api/chores/e/completions',
+        '/api/chores/a/completions',
+      ])
+      await screen.findByText('화분 물주기 완료')
+    })
+
+    it('움직임 줄이기 설정이면 애니메이션을 하지 않는다', async () => {
+      fakeLayout()
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query }))
+      mockFetch({
+        'GET /api/chores': () => jsonResponse(CHORES),
+        'POST /api/chores/e/completions': (call) =>
+          jsonResponse(completed(CHORES[4], (call.body as { id: string }).id), 201),
+      })
+      render(<App today={TODAY} />)
+      await waitDashboard()
+      fireEvent.click(checkButton(section('오늘 할 일'), '분리수거'))
+      await screen.findByText('분리수거 완료')
+      expect(animate).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('게이지로 남은 일수 조절', () => {
+  const FRIDGE = CHORES[0] // 냉장고 청소, 30일, D-17
+
+  function sliderOf(region: HTMLElement, name: string): HTMLElement {
+    return within(cardOf(region, name)).getByRole('slider')
+  }
+
+  function badgeText(region: HTMLElement, name: string): string {
+    return cardOf(region, name).querySelector('.badge__text')?.textContent ?? ''
+  }
+
+  function patchRoute(base: ChoreRecord) {
+    return (call: { body: unknown }) => jsonResponse({ ...base, ...(call.body as object), updatedAt: '2026-10-14T01:00:00Z' })
+  }
+
+  it('키보드 화살표로 1일씩 미리 보고, Enter로 PATCH { lastDoneAt }를 보낸 뒤 실행 취소 알림을 띄운다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': patchRoute(FRIDGE),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    expect(slider.getAttribute('aria-label')).toBe('냉장고 청소 남은 일수')
+
+    slider.focus()
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}')
+    // 미리 보기: 배지, 게이지 값, 읽기용 값이 바뀌고 아직 저장하지 않는다.
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-14')
+    expect(slider.getAttribute('aria-valuenow')).toBe('14')
+    expect(slider.getAttribute('aria-valuetext')).toBe('14일 남음')
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+
+    await user.keyboard('{Enter}')
+    const patches = calls.filter((c) => c.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].url).toBe('/api/chores/c')
+    // 새 마지막 수행일 = 오늘(10/14) − (30 − 14)일 = 9/28. 완료 기록은 만들지 않는다.
+    expect(patches[0].body).toEqual({ lastDoneAt: '2026-09-28' })
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+
+    const toast = await screen.findByTestId('undo-toast')
+    expect(toast.querySelector('.toast__text')?.textContent).toBe('냉장고 청소 → D-14')
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-14')
+    // 게이지를 눌러도 편집 화면으로 가지 않는다.
+    expect(screen.queryByRole('heading', { name: '집안일 편집' })).toBeNull()
+  })
+
+  it('포커스가 빠지면 저장하고, 값이 그대로이거나 Esc로 취소하면 저장하지 않는다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': patchRoute(FRIDGE),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+
+    // 바꿨다가 되돌리면 그대로다.
+    slider.focus()
+    await user.keyboard('{ArrowLeft}{ArrowRight}{Enter}')
+    // 최댓값(주기)에서 더 올려도 그대로다.
+    await user.keyboard('{End}')
+    expect(slider.getAttribute('aria-valuenow')).toBe('30')
+    await user.keyboard('{ArrowRight}{Escape}')
+    expect(slider.getAttribute('aria-valuenow')).toBe('17')
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-17')
+    await user.keyboard('{Enter}')
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+
+    await user.keyboard('{ArrowRight}')
+    await user.tab()
+    const patches = calls.filter((c) => c.method === 'PATCH')
+    expect(patches.map((c) => c.body)).toEqual([{ lastDoneAt: '2026-10-02' }])
+    await screen.findByText('냉장고 청소 → D-18')
+  })
+
+  it('지연 카드는 0(D-Day)부터 조절하고, 저장하면 남은 일수 순서의 제자리(다른 영역)로 옮겨진다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/a': patchRoute(CHORES[1]),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('오늘 할 일'), '화분 물주기')
+    expect(slider.getAttribute('aria-valuenow')).toBe('0')
+
+    slider.focus()
+    // 0 아래(지연)로는 내려가지 않는다.
+    await user.keyboard('{ArrowLeft}')
+    expect(slider.getAttribute('aria-valuenow')).toBe('0')
+    expect(badgeText(section('오늘 할 일'), '화분 물주기')).toBe('D-Day')
+    await user.keyboard('{ArrowRight}{ArrowRight}{Enter}')
+
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([{ lastDoneAt: '2026-10-09' }])
+    // 낙관적 갱신으로 바로 옮겨진다.
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '걸레질'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '화분 물주기', '냉장고 청소'])
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 1개 포함)')
+    await screen.findByText('화분 물주기 → D-2')
+  })
+
+  it('저장에 실패하면 원래대로 되돌리고 오류를 알린다', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': () => jsonResponse({ detail: '서버 고장' }, 500),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    slider.focus()
+    await user.keyboard('{Home}{Enter}')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.querySelector('.error-notice__title')?.textContent).toBe('남은 일수를 저장하지 못했어요.')
+    expect(alert.querySelector('.error-notice__detail')?.textContent).toBe('오류 코드 500 · 서버 고장')
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-17')
+    expect(sliderOf(section('그 밖의 집안일'), '냉장고 청소').getAttribute('aria-valuenow')).toBe('17')
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+  })
+
+  it('실행 취소하면 원래 마지막 수행일로 PATCH한다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': patchRoute(FRIDGE),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    slider.focus()
+    await user.keyboard('{ArrowLeft}{Enter}')
+    const toast = await screen.findByTestId('undo-toast')
+
+    await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([
+      { lastDoneAt: '2026-09-30' },
+      { lastDoneAt: '2026-10-01' },
+    ])
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-17')
+    await waitFor(() =>
+      expect(sliderOf(section('그 밖의 집안일'), '냉장고 청소').getAttribute('aria-disabled')).toBeNull(),
+    )
+  })
+
+  it('실행 취소 PATCH가 실패하면 조절한 값으로 되돌리고 오류를 알린다', async () => {
+    const user = userEvent.setup()
+    let fail = false
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': (call) => (fail ? jsonResponse({ detail: '서버 고장' }, 500) : patchRoute(FRIDGE)(call)),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    sliderOf(section('그 밖의 집안일'), '냉장고 청소').focus()
+    await user.keyboard('{ArrowLeft}{Enter}')
+    const toast = await screen.findByTestId('undo-toast')
+    fail = true
+    await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.querySelector('.error-notice__title')?.textContent).toBe('실행 취소하지 못했어요.')
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-16')
+  })
+
+  it('가로로 끌면 손가락이 움직인 만큼 조절하고, 손을 떼면 저장한다. 편집 화면으로 가지 않는다', async () => {
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': patchRoute(FRIDGE),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    // 트랙 폭 300px, 주기 30일 → 10px당 1일
+    const track = slider.querySelector('.gauge') as HTMLElement
+    track.getBoundingClientRect = () => ({ width: 300, height: 8, x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 8 }) as DOMRect
+    const pointer = { pointerId: 7, isPrimary: true, pointerType: 'touch' }
+
+    fireEvent.pointerDown(slider, { ...pointer, clientX: 100, clientY: 20 })
+    // 기준 거리(10px) 전에는 아무것도 바뀌지 않는다.
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 106, clientY: 21 })
+    expect(slider.getAttribute('aria-valuenow')).toBe('17')
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 130, clientY: 22 })
+    expect(slider.getAttribute('aria-valuenow')).toBe('20')
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-20')
+    // 범위 밖으로 끌어도 주기(30)에서 멈춘다.
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 900, clientY: 22 })
+    expect(slider.getAttribute('aria-valuenow')).toBe('30')
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 150, clientY: 22 })
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+
+    fireEvent.pointerUp(slider, { ...pointer, clientX: 150, clientY: 22 })
+    fireEvent.click(slider)
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([{ lastDoneAt: '2026-10-06' }])
+    await screen.findByText('냉장고 청소 → D-22')
+    expect(screen.queryByRole('heading', { name: '집안일 편집' })).toBeNull()
+  })
+
+  it('세로로 먼저 움직이면(스크롤) 조절하지 않고, 누르기만 해도 아무 일도 없다', async () => {
+    const { calls } = mockFetch({ 'GET /api/chores': () => jsonResponse(CHORES) })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    const track = slider.querySelector('.gauge') as HTMLElement
+    track.getBoundingClientRect = () => ({ width: 300, height: 8, x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 8 }) as DOMRect
+    const pointer = { pointerId: 3, isPrimary: true, pointerType: 'touch' }
+
+    fireEvent.pointerDown(slider, { ...pointer, clientX: 100, clientY: 20 })
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 102, clientY: 50 })
+    fireEvent.pointerMove(slider, { ...pointer, clientX: 160, clientY: 60 })
+    expect(slider.getAttribute('aria-valuenow')).toBe('17')
+    fireEvent.pointerCancel(slider, { ...pointer })
+
+    // 탭
+    fireEvent.pointerDown(slider, { ...pointer, clientX: 100, clientY: 20 })
+    fireEvent.pointerUp(slider, { ...pointer, clientX: 100, clientY: 20 })
+    fireEvent.click(slider)
+    fireEvent.blur(slider)
+
+    expect(calls.every((c) => c.method === 'GET')).toBe(true)
+    expect(screen.queryByRole('heading', { name: '집안일 편집' })).toBeNull()
+    expect(badgeText(section('그 밖의 집안일'), '냉장고 청소')).toBe('D-17')
+  })
+
+  it('저장 중에는 그 카드의 게이지를 조절할 수 없다', async () => {
+    const user = userEvent.setup()
+    let resolve!: (value: Response) => void
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'PATCH /api/chores/c': () => new Promise<Response>((r) => (resolve = r)),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = sliderOf(section('그 밖의 집안일'), '냉장고 청소')
+    slider.focus()
+    await user.keyboard('{ArrowLeft}{Enter}')
+    expect(slider.getAttribute('aria-disabled')).toBe('true')
+    await user.keyboard('{ArrowLeft}{Enter}')
+    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(1)
+    resolve(jsonResponse({ ...FRIDGE, lastDoneAt: '2026-09-30' }))
+    await screen.findByText('냉장고 청소 → D-16')
   })
 })
 
