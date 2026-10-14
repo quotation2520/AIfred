@@ -8,11 +8,14 @@ import {
   updateChore,
 } from '../api/chores'
 import { deleteErrorText, type ErrorText, saveErrorText } from '../lib/errorMessages'
+import type { Preset } from '../lib/presets'
 import ErrorNotice from './ErrorNotice'
 
 interface ChoreFormProps {
   /** 편집할 집안일. 없으면 추가 모드다. */
   chore?: ChoreRecord
+  /** 추가 모드에서 기본 목록에서 고른 항목. 이름, 아이콘, 주기를 채워 연다. 채워진 값은 "바뀐 입력"으로 보지 않는다. */
+  preset?: Pick<Preset, 'name' | 'icon' | 'intervalDays'>
   today: string
   /** 저장/삭제가 끝났을 때 */
   onDone: () => void
@@ -41,7 +44,15 @@ export const MAX_LAST_DONE_AT = '2100-12-31'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-function initialValues(chore: ChoreRecord | undefined, today: string): FormValues {
+function initialValues(
+  chore: ChoreRecord | undefined,
+  preset: ChoreFormProps['preset'],
+  today: string,
+): FormValues {
+  if (!chore && preset) {
+    // 기본 목록에서 고른 경우: 마지막 수행일은 오늘, 메모는 비워 둔다.
+    return { name: preset.name, intervalDays: String(preset.intervalDays), lastDoneAt: today, icon: preset.icon, note: '' }
+  }
   return {
     name: chore?.name ?? '',
     intervalDays: chore ? String(chore.intervalDays) : '',
@@ -103,9 +114,9 @@ function isDirty(values: FormValues, initial: FormValues): boolean {
 }
 
 /** F1 집안일 추가·편집 화면. */
-function ChoreForm({ chore, today, onDone, onCancel }: ChoreFormProps) {
+function ChoreForm({ chore, preset, today, onDone, onCancel }: ChoreFormProps) {
   const isEdit = chore !== undefined
-  const [initial] = useState<FormValues>(() => initialValues(chore, today))
+  const [initial] = useState<FormValues>(() => initialValues(chore, preset, today))
   const [values, setValues] = useState<FormValues>(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState<ErrorText | null>(null)

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import type { ChoreRecord } from './api/chores'
 import { MAX_INTERVAL_DAYS, MAX_LAST_DONE_AT, MIN_LAST_DONE_AT } from './components/ChoreForm'
 import { UNDO_TOAST_MS } from './components/Dashboard'
+import { LATER_OPEN_STORAGE_KEY, LATER_THRESHOLD_DAYS } from './lib/dashboardLayout'
 import { MOVE_MS } from './lib/motion'
 import { jsonResponse, mockFetch, record } from './test/fetchMock'
 
@@ -25,7 +26,17 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  localStorage.clear()
 })
+
+/** "나중에 할 일"(남은 일수 7일 이상)을 펼친 상태로 기억시켜 둔다. 카드가 모두 보여야 하는 테스트에서 쓴다. */
+function rememberLaterOpen() {
+  localStorage.setItem(LATER_OPEN_STORAGE_KEY, '1')
+}
+
+function laterToggle(): HTMLElement {
+  return within(section('그 밖의 집안일')).getByRole('button', { name: /^(나중에 할 일 \d+개 더 보기|접기)$/ })
+}
 
 function section(name: string) {
   return screen.getByRole('region', { name })
@@ -69,8 +80,18 @@ function fab(): HTMLElement {
   return buttons[buttons.length - 1]
 }
 
-async function openAddForm(user: UserEvent) {
+const PICKER_TITLE = '어떤 집안일을 추가할까요?'
+
+/** "+"를 눌러 기본 목록 선택 화면을 연다. */
+async function openPicker(user: UserEvent) {
   await user.click(fab())
+  expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
+}
+
+/** 선택 화면에서 "직접 입력"을 눌러 빈 추가 폼을 연다. */
+async function openAddForm(user: UserEvent) {
+  await openPicker(user)
+  await user.click(screen.getByRole('button', { name: '직접 입력' }))
   expect(screen.getByRole('heading', { name: '집안일 추가' })).toBeTruthy()
 }
 
@@ -88,6 +109,7 @@ describe('대시보드', () => {
   })
 
   it('오늘 할 일은 밀린 일 먼저, 그 밖의 집안일은 오늘 할 일을 빼고 남은 일수 순으로 보여준다', async () => {
+    rememberLaterOpen()
     await renderDashboard()
     expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
     expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '냉장고 청소'])
@@ -102,6 +124,7 @@ describe('대시보드', () => {
   })
 
   it('지연 카드에 D+n 배지, 경고 표시, 강조가 붙고, 게이지 값이 상태에 맞다', async () => {
+    rememberLaterOpen()
     await renderDashboard()
     const todaySection = section('오늘 할 일')
     const others = section('그 밖의 집안일')
@@ -142,6 +165,7 @@ describe('대시보드', () => {
   })
 
   it('이름 옆에 주기를 표시한다: 1일은 "매일", 나머지는 "N일마다"', async () => {
+    rememberLaterOpen()
     await renderDashboard([
       record('a', '설거지', 1, '2026-10-14'),
       record('b', '화분 물주기', 7, '2026-10-12'),
@@ -172,9 +196,9 @@ describe('대시보드', () => {
   })
 
   it('오늘 할 일이 없으면 빈 상태 문구를 보여준다', async () => {
-    await renderDashboard([record('c', '냉장고 청소', 30, '2026-10-01')])
+    await renderDashboard([record('c', '냉장고 청소', 30, '2026-10-01'), record('f', '이불 빨래', 14, '2026-10-01')])
     expect(within(section('오늘 할 일')).getByText(/오늘 할 일이 없어요/)).toBeTruthy()
-    expect(cardNames(section('그 밖의 집안일'))).toEqual(['냉장고 청소'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래'])
     expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 0개')
   })
 
@@ -189,7 +213,8 @@ describe('대시보드', () => {
     const buttons = screen.getAllByRole('button', { name: '집안일 추가' })
     expect(buttons).toHaveLength(2) // 안내 상자 버튼 + 하단 "+"
     await user.click(buttons[0])
-    expect(screen.getByRole('heading', { name: '집안일 추가' })).toBeTruthy()
+    // 기본 목록 선택 화면이 먼저 열린다.
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
   })
 
   it('로딩 후 API 오류를 한국어 안내와 작은 기술 정보로 보여주고 다시 시도할 수 있다', async () => {
@@ -280,6 +305,9 @@ describe('오늘 날짜 갱신 (U1)', () => {
 })
 
 describe('완료 체크 (F3)', () => {
+  // 카드가 모두 보이는 상태에서 확인한다. 접힌 "나중에 할 일"과의 경계는 아래 '나중에 할 일 접기'에서 따로 본다.
+  beforeEach(rememberLaterOpen)
+
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
   function deferred<T>() {
@@ -531,8 +559,8 @@ describe('완료 체크 (F3)', () => {
       })
       render(<App today={TODAY} />)
       await waitDashboard()
-      // 처음 나타날 때는 떠오르는 효과만 있다.
-      expect(animate).toHaveBeenCalledTimes(CHORES.length)
+      // 처음 나타날 때는 떠오르는 효과만 있다(카드 + 맨 아래 "접기" 버튼).
+      expect(animate).toHaveBeenCalledTimes(CHORES.length + 1)
       animate.mockClear()
 
       fireEvent.click(checkButton(section('오늘 할 일'), '분리수거'))
@@ -575,7 +603,211 @@ describe('완료 체크 (F3)', () => {
   })
 })
 
+describe('나중에 할 일 접기 (남은 일수 7일 이상)', () => {
+  // TODAY(10/14) 기준 남은 일수
+  const LATER_CHORES = [
+    record('t', '걸레질', 3, '2026-10-11'), // 0, 오늘 할 일
+    record('s', '먼지 털기', 7, '2026-10-13'), // 6
+    record('l', '물걸레질', 10, '2026-10-11'), // 7
+    record('c', '냉장고 청소', 30, '2026-10-01'), // 17
+  ]
+
+  function toastDetail(): string | null {
+    return screen.getByTestId('undo-toast').querySelector('.toast__detail')?.textContent ?? null
+  }
+
+  it('기준값은 7일이고, 남은 일수 6은 보이고 7 이상은 접혀서 "나중에 할 일 N개 더 보기"만 보인다', async () => {
+    expect(LATER_THRESHOLD_DAYS).toBe(7)
+    await renderDashboard(LATER_CHORES)
+    const others = section('그 밖의 집안일')
+    expect(cardNames(others)).toEqual(['먼지 털기'])
+    expect(screen.queryByText('물걸레질')).toBeNull()
+    const toggle = laterToggle()
+    expect(toggle.textContent).toBe('나중에 할 일 2개 더 보기')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // 버튼은 영역 맨 아래에 있다.
+    expect(others.lastElementChild).toBe(toggle)
+    // 요약은 숨김과 관계없다.
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 1개')
+  })
+
+  it('펼치면 같은 정렬 순서로 이어서 보이고 "접기"로 바뀌며, 다시 접을 수 있다. 상태를 기기에 기억한다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard(LATER_CHORES)
+    await user.click(laterToggle())
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기', '물걸레질', '냉장고 청소'])
+    expect(laterToggle().textContent).toBe('접기')
+    expect(laterToggle().getAttribute('aria-expanded')).toBe('true')
+    expect(localStorage.getItem(LATER_OPEN_STORAGE_KEY)).toBe('1')
+
+    await user.click(laterToggle())
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기'])
+    expect(laterToggle().textContent).toBe('나중에 할 일 2개 더 보기')
+    expect(localStorage.getItem(LATER_OPEN_STORAGE_KEY)).toBe('0')
+  })
+
+  it('기억해 둔 펼침 상태로 시작한다', async () => {
+    rememberLaterOpen()
+    await renderDashboard(LATER_CHORES)
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기', '물걸레질', '냉장고 청소'])
+    expect(laterToggle().textContent).toBe('접기')
+  })
+
+  it('저장소를 쓸 수 없으면 접힌 상태로 시작하고, 펼치기는 오류 없이 동작한다', async () => {
+    const user = userEvent.setup()
+    rememberLaterOpen()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    await renderDashboard(LATER_CHORES)
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기'])
+    await user.click(laterToggle())
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기', '물걸레질', '냉장고 청소'])
+  })
+
+  it('그 밖의 집안일이 모두 7일 이상이면 영역에 버튼만 보이고, 7일 이상이 없으면 버튼을 숨긴다', async () => {
+    await renderDashboard([LATER_CHORES[0], LATER_CHORES[2], LATER_CHORES[3]])
+    const others = section('그 밖의 집안일')
+    expect(within(others).queryAllByRole('listitem')).toHaveLength(0)
+    expect(laterToggle().textContent).toBe('나중에 할 일 2개 더 보기')
+    cleanup()
+
+    await renderDashboard([LATER_CHORES[0], LATER_CHORES[1]])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기'])
+    expect(within(section('그 밖의 집안일')).queryByRole('button', { name: /더 보기|접기/ })).toBeNull()
+    cleanup()
+
+    // 펼친 상태에서도 7일 이상이 0개면 "접기"를 보이지 않는다.
+    rememberLaterOpen()
+    await renderDashboard([LATER_CHORES[0], LATER_CHORES[1]])
+    expect(within(section('그 밖의 집안일')).queryByRole('button', { name: /더 보기|접기/ })).toBeNull()
+  })
+
+  it('게이지로 7일 이상이 되면 접힌 영역으로 들어가고, 알림에 "나중에 할 일로 이동"이 붙는다. 실행 취소하면 다시 보인다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(LATER_CHORES),
+      'PATCH /api/chores/s': (call) => jsonResponse({ ...LATER_CHORES[1], ...(call.body as object) }),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const slider = within(cardOf(section('그 밖의 집안일'), '먼지 털기')).getByRole('slider')
+    slider.focus()
+    await user.keyboard('{ArrowRight}{Enter}')
+
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([{ lastDoneAt: '2026-10-14' }])
+    // 낙관적 갱신으로 바로 접힌 영역에 들어가고, 버튼 개수가 늘고 한 번 반짝인다.
+    expect(within(section('그 밖의 집안일')).queryAllByRole('listitem')).toHaveLength(0)
+    expect(laterToggle().textContent).toBe('나중에 할 일 3개 더 보기')
+    expect(laterToggle().querySelector('.later-toggle__label--arrived')).toBeTruthy()
+    await screen.findByText('먼지 털기 → D-7')
+    expect(toastDetail()).toBe('나중에 할 일로 이동')
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 1개')
+
+    await user.click(within(screen.getByTestId('undo-toast')).getByRole('button', { name: '실행 취소' }))
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기'])
+    expect(laterToggle().textContent).toBe('나중에 할 일 2개 더 보기')
+  })
+
+  it('완료 체크로 7일 이상이 되는 카드도 접힌 영역으로 들어가고 알림에 표시된다', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(LATER_CHORES),
+      'POST /api/chores/t/completions': (call) =>
+        jsonResponse(
+          {
+            completion: {
+              id: (call.body as { id: string }).id,
+              choreId: 't',
+              doneAt: '2026-10-14T00:00:00Z',
+              doneOn: TODAY,
+              dueOn: TODAY,
+              previousLastDoneAt: '2026-10-11',
+              deletedAt: null,
+            },
+            chore: { ...LATER_CHORES[0], intervalDays: 3, lastDoneAt: TODAY },
+          },
+          201,
+        ),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    // 걸레질은 주기 3일이라 완료해도 D-3: 접히지 않고 알림에도 붙지 않는다.
+    await user.click(within(cardOf(section('오늘 할 일'), '걸레질')).getByRole('button', { name: '걸레질 완료 체크' }))
+    await screen.findByText('걸레질 완료')
+    expect(toastDetail()).toBeNull()
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['걸레질', '먼지 털기'])
+    expect(laterToggle().querySelector('.later-toggle__label--arrived')).toBeNull()
+  })
+
+  it('주기 7일 이상인 오늘 할 일을 완료하면 접힌 영역으로 들어간다. 펼친 상태에서는 그대로 보이고 알림에 붙지 않는다', async () => {
+    const user = userEvent.setup()
+    const watering = record('a', '화분 물주기', 7, '2026-10-05') // D+2 → 완료하면 D-7
+    const route = (call: { body: unknown }) =>
+      jsonResponse(
+        {
+          completion: {
+            id: (call.body as { id: string }).id,
+            choreId: 'a',
+            doneAt: '2026-10-14T00:00:00Z',
+            doneOn: TODAY,
+            dueOn: '2026-10-12',
+            previousLastDoneAt: '2026-10-05',
+            deletedAt: null,
+          },
+          chore: { ...watering, lastDoneAt: TODAY },
+        },
+        201,
+      )
+    mockFetch({ 'GET /api/chores': () => jsonResponse([...LATER_CHORES, watering]), 'POST /api/chores/a/completions': route })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+
+    await user.click(within(cardOf(section('오늘 할 일'), '화분 물주기')).getByRole('button', { name: '화분 물주기 완료 체크' }))
+    expect(screen.queryByText('화분 물주기')).toBeNull()
+    expect(laterToggle().textContent).toBe('나중에 할 일 3개 더 보기')
+    await screen.findByText('화분 물주기 완료')
+    expect(toastDetail()).toBe('나중에 할 일로 이동')
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 1개')
+    cleanup()
+
+    rememberLaterOpen()
+    mockFetch({ 'GET /api/chores': () => jsonResponse([...LATER_CHORES, watering]), 'POST /api/chores/a/completions': route })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    await user.click(within(cardOf(section('오늘 할 일'), '화분 물주기')).getByRole('button', { name: '화분 물주기 완료 체크' }))
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기', '물걸레질', '화분 물주기', '냉장고 청소'])
+    await screen.findByText('화분 물주기 완료')
+    expect(toastDetail()).toBeNull()
+  })
+
+  it('펼친 상태에서 게이지로 7일 미만이 되면 접어도 계속 보인다', async () => {
+    const user = userEvent.setup()
+    rememberLaterOpen()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(LATER_CHORES),
+      'PATCH /api/chores/l': (call) => jsonResponse({ ...LATER_CHORES[2], ...(call.body as object) }),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    within(cardOf(section('그 밖의 집안일'), '물걸레질')).getByRole('slider').focus()
+    await user.keyboard('{ArrowLeft}{Enter}')
+    await screen.findByText('물걸레질 → D-6')
+    expect(toastDetail()).toBeNull()
+    expect(laterToggle().textContent).toBe('접기')
+
+    await user.click(laterToggle())
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['먼지 털기', '물걸레질'])
+    expect(laterToggle().textContent).toBe('나중에 할 일 1개 더 보기')
+  })
+})
+
 describe('게이지로 남은 일수 조절', () => {
+  beforeEach(rememberLaterOpen)
+
   const FRIDGE = CHORES[0] // 냉장고 청소, 30일, D-17
 
   function sliderOf(region: HTMLElement, name: string): HTMLElement {
@@ -992,12 +1224,16 @@ describe('집안일 추가', () => {
     expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('빨래')
   })
 
-  it('입력하지 않았으면 취소할 때 묻지 않고 요청 없이 대시보드로 돌아간다', async () => {
+  it('입력하지 않았으면 취소할 때 묻지 않고 선택 화면으로, 선택 화면을 닫으면 요청 없이 대시보드로 돌아간다', async () => {
     const user = userEvent.setup()
     const { calls } = await renderDashboard()
     const confirm = vi.spyOn(window, 'confirm')
     await openAddForm(user)
     await user.click(screen.getByRole('button', { name: '취소' }))
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
+    expect(confirm).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '닫기' }))
     await waitDashboard()
     expect(confirm).not.toHaveBeenCalled()
     expect(calls.every((c) => c.method === 'GET')).toBe(true)
@@ -1016,8 +1252,156 @@ describe('집안일 추가', () => {
 
     confirm.mockReturnValue(true)
     await user.click(screen.getByRole('button', { name: '취소' }))
-    await waitDashboard()
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
     expect(confirm).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('기본 목록에서 고르기', () => {
+  /** 선택 화면의 항목 버튼. 이름 뒤에 주기("7일마다", "매일")와, 등록돼 있으면 "추가됨"이 붙는다. */
+  function presetButton(name: string): HTMLButtonElement {
+    return screen.getByRole('button', { name: new RegExp(`^${name} (매일|\\d+일마다)( 추가됨)?$`) }) as HTMLButtonElement
+  }
+
+  it('분류별 제목 아래에 항목을 아이콘, 이름, 주기와 함께 보여준다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([])
+    await openPicker(user)
+
+    for (const name of ['주방', '청소', '욕실', '세탁', '쓰레기', '생활·관리']) {
+      expect(screen.getByRole('region', { name })).toBeTruthy()
+    }
+    const kitchen = screen.getByRole('region', { name: '주방' })
+    expect(kitchen.querySelector('h2')?.textContent).toBe('🍳 주방')
+    const dishes = within(kitchen).getByRole('button', { name: '설거지 매일' })
+    expect(dishes.querySelector('.preset-chip__icon')?.textContent).toBe('🍽️')
+    expect(dishes.querySelector('.preset-chip__interval')?.textContent).toBe('매일')
+    expect(within(kitchen).getByRole('button', { name: '냉장고 정리 7일마다' })).toBeTruthy()
+    // 반려동물(선택 분류)을 뺀 37개가 처음부터 보인다.
+    expect(document.querySelectorAll('.preset-chip')).toHaveLength(37)
+    expect(screen.getByRole('button', { name: '직접 입력' })).toBeTruthy()
+  })
+
+  it('반려동물 분류는 맨 아래에 접혀 있다가 펼쳐진다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([])
+    await openPicker(user)
+    expect(screen.queryByRole('region', { name: '반려동물' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^밥그릇·물그릇 세척/ })).toBeNull()
+
+    const toggle = screen.getByRole('button', { name: '반려동물 항목 보기' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await user.click(toggle)
+    const pets = screen.getByRole('region', { name: '반려동물' })
+    expect(within(pets).getByRole('button', { name: '밥그릇·물그릇 세척 매일' })).toBeTruthy()
+    expect(within(pets).getByRole('button', { name: '목욕시키기 30일마다' })).toBeTruthy()
+    // 펼친 분류는 다른 분류들 뒤(맨 아래)에 있다.
+    const regions = screen.getAllByRole('region').map((r) => r.getAttribute('aria-labelledby'))
+    expect(regions[regions.length - 1]).toBe('preset-pets-heading')
+
+    const hide = screen.getByRole('button', { name: '반려동물 항목 숨기기' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    await user.click(hide)
+    expect(screen.queryByRole('region', { name: '반려동물' })).toBeNull()
+  })
+
+  it('항목을 누르면 이름, 아이콘, 주기가 채워진 폼이 열리고, 저장하면 그 값으로 POST한다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([])
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse([]),
+      'POST /api/chores': (call) => jsonResponse(call.body, 201),
+    })
+    await openPicker(user)
+    await user.click(presetButton('이불 빨래'))
+
+    expect(screen.getByRole('heading', { name: '집안일 추가' })).toBeTruthy()
+    expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('이불 빨래')
+    expect((screen.getByLabelText('주기 (일)') as HTMLInputElement).value).toBe('14')
+    expect((screen.getByLabelText('아이콘 (선택)') as HTMLInputElement).value).toBe('🛏️')
+    expect((screen.getByLabelText('마지막 수행일') as HTMLInputElement).value).toBe(TODAY)
+    expect((screen.getByLabelText('메모 (선택)') as HTMLTextAreaElement).value).toBe('')
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await waitDashboard()
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/chores', 'GET /api/chores'])
+    const body = calls[0].body as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['icon', 'id', 'intervalDays', 'lastDoneAt', 'name'])
+    expect(body).toMatchObject({ name: '이불 빨래', icon: '🛏️', intervalDays: 14, lastDoneAt: TODAY })
+  })
+
+  it('채워진 값은 저장 전에 고칠 수 있다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([])
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse([]),
+      'POST /api/chores': (call) => jsonResponse(call.body, 201),
+    })
+    await openPicker(user)
+    await user.click(presetButton('화분 물주기'))
+    await user.clear(screen.getByLabelText('주기 (일)'))
+    await user.type(screen.getByLabelText('주기 (일)'), '4')
+    await user.type(screen.getByLabelText('메모 (선택)'), '베란다')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await waitDashboard()
+    expect(calls[0].body).toMatchObject({ name: '화분 물주기', icon: '🪴', intervalDays: 4, note: '베란다' })
+  })
+
+  it('이미 등록된 이름의 항목은 "추가됨"으로 흐리게 보이고 누를 수 없다. 삭제된 집안일은 세지 않는다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([
+      record('a', '설거지', 1, TODAY),
+      record('b', ' 분리수거 ', 3, TODAY),
+      record('z', '빨래', 3, TODAY, { deletedAt: '2026-10-13T00:00:00Z' }),
+    ])
+    await openPicker(user)
+
+    const dishes = presetButton('설거지')
+    expect(dishes.disabled).toBe(true)
+    expect(dishes.className).toContain('preset-chip--added')
+    expect(dishes.querySelector('.preset-chip__added')?.textContent).toBe('추가됨')
+    // 앞뒤 공백은 무시하고 비교한다.
+    expect(presetButton('분리수거').disabled).toBe(true)
+    await user.click(dishes)
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
+
+    const laundry = presetButton('빨래')
+    expect(laundry.disabled).toBe(false)
+    expect(laundry.querySelector('.preset-chip__added')).toBeNull()
+  })
+
+  it('직접 입력을 누르면 빈 폼이 열린다', async () => {
+    const user = userEvent.setup()
+    await renderDashboard([])
+    await openPicker(user)
+    await user.click(screen.getByRole('button', { name: '직접 입력' }))
+    expect(screen.getByRole('heading', { name: '집안일 추가' })).toBeTruthy()
+    expect((screen.getByLabelText('이름') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('주기 (일)') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('아이콘 (선택)') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('마지막 수행일') as HTMLInputElement).value).toBe(TODAY)
+  })
+
+  it('채워진 값만으로는 바뀐 것으로 보지 않아 묻지 않고, 폼 취소는 선택 화면, 선택 화면 닫기는 대시보드로 간다', async () => {
+    const user = userEvent.setup()
+    const { calls } = await renderDashboard()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await openPicker(user)
+    await user.click(presetButton('장보기'))
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
+
+    // 채운 값을 고친 뒤 취소하면 묻는다.
+    await user.click(presetButton('장보기'))
+    await user.type(screen.getByLabelText('이름'), ' 2')
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    expect(confirm).toHaveBeenCalledWith('작성 중인 내용을 버릴까요?')
+    expect(screen.getByRole('heading', { name: PICKER_TITLE })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    await waitDashboard()
+    expect(calls.every((c) => c.method === 'GET')).toBe(true)
   })
 })
 

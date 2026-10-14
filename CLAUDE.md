@@ -50,12 +50,14 @@ npm run screens -- -g edit-form                                          # 시�
 - 입력 범위는 서버(`schemas.py`)와 웹(`ChoreForm.tsx`)에 같은 값으로 들어 있다. 주기는 1~36500일, 마지막 수행일은 2000-01-01~2100-12-31이다. 이 범위가 없으면 날짜 계산이 overflow로 500을 낸다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
 ### 웹 구조
-- 라우터 없이 `App.tsx`의 상태로 대시보드와 추가·편집 화면을 오간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
+- 라우터 없이 `App.tsx`의 상태로 화면을 오간다. 추가는 대시보드 → 기본 목록 선택(`PresetPicker`) → 추가 폼 순서다. 폼 취소는 선택 화면으로, 선택 화면 닫기는 대시보드로 간다. 편집은 카드에서 바로 폼으로 간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
+- 기본 집안일 목록은 `shared/presets.json`이다(원본 문서 `docs/chore_presets.md`, 읽는 곳 `lib/presets.ts`, 데이터 검증 `lib/presets.test.ts`). 등록된 이름과 같은 항목은 "추가됨"으로 막는다.
+- "그 밖의 집안일" 중 남은 일수가 `LATER_THRESHOLD_DAYS`(7, `lib/dashboardLayout.ts`) 이상인 것은 "나중에 할 일"로 접는다. 펼침 상태는 localStorage `aifred.laterOpen`에 기억하고, 읽지 못하면 접힌다. 요약 개수는 숨김과 관계없다.
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
 - 완료 체크와 게이지 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 둘 다 `UndoToast`로 실행 취소를 제공한다. 카드는 항상 정렬 위치에 있고, 위치가 바뀌면 `useFlip`이 이동 애니메이션을 준다. 이동 중인 카드는 250ms 동안 체크를 받지 않는다. 애니메이션 시간은 `lib/motion.ts`에 있고, `prefers-reduced-motion`이면 끈다.
 - 게이지(`GaugeSlider`)는 끌어서 잔여일을 0~주기로 고치는 슬라이더다. PATCH { lastDoneAt }로 저장하고 완료 기록은 만들지 않는다(보정). 가로로 10px 이상 움직여야 조절을 시작해서 세로 스크롤과 구분한다.
 - 폰은 HTTP(`http://<PC IP>:5173`)로 접속하므로 HTTPS 전용 브라우저 API(`crypto.randomUUID`, 서비스 워커, 클립보드 등)를 쓸 수 없다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
-- 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다.
+- 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다. afterEach에서 localStorage를 비우므로, 접힌 카드까지 모두 보여야 하는 테스트는 `rememberLaterOpen()`을 쓴다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.
 
 ### 아직 없는 것 (PRD 기준)

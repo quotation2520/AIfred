@@ -1,0 +1,100 @@
+{
+  "categories": [
+    {
+      "id": "kitchen",
+      "name": "주방",
+      "emoji": "🍳",
+      "optional": false,
+      "items": [
+        { "name": "설거지", "icon": "🍽️", "intervalDays": 1 },
+        { "name": "음식물 쓰레기 버리기", "icon": "🥬", "intervalDays": 2, "note": "여름에는 매일 권장" },
+        { "name": "냉장고 정리", "icon": "🧊", "intervalDays": 7, "note": "유통기한 확인, 남은 음식 정리" },
+        { "name": "냉장고 청소", "icon": "🧼", "intervalDays": 30, "note": "선반, 문 고무 패킹 닦기" },
+        { "name": "싱크대 배수구 청소", "icon": "🚰", "intervalDays": 7 },
+        { "name": "가스레인지·인덕션 청소", "icon": "🔥", "intervalDays": 14 },
+        { "name": "전자레인지 청소", "icon": "♨️", "intervalDays": 30 },
+        { "name": "행주 삶기", "icon": "🫧", "intervalDays": 7 },
+        { "name": "수세미 교체", "icon": "🧽", "intervalDays": 30 }
+      ]
+    },
+    {
+      "id": "cleaning",
+      "name": "청소",
+      "emoji": "🧹",
+      "optional": false,
+      "items": [
+        { "name": "청소기 돌리기", "icon": "🧹", "intervalDays": 3 },
+        { "name": "물걸레질", "icon": "🪣", "intervalDays": 7 },
+        { "name": "먼지 털기", "icon": "🪶", "intervalDays": 7, "note": "선반, 가전 위, 모니터" },
+        { "name": "환기", "icon": "🌬️", "intervalDays": 1 },
+        { "name": "현관 정리", "icon": "🚪", "intervalDays": 14, "note": "신발 정리, 바닥 쓸기" },
+        { "name": "창문·창틀 닦기", "icon": "🪟", "intervalDays": 30 }
+      ]
+    },
+    {
+      "id": "bathroom",
+      "name": "욕실",
+      "emoji": "🛁",
+      "optional": false,
+      "items": [
+        { "name": "욕실 청소", "icon": "🛁", "intervalDays": 7, "note": "바닥, 벽, 세면대" },
+        { "name": "변기 청소", "icon": "🚽", "intervalDays": 7 },
+        { "name": "샤워기·배수구 청소", "icon": "🚿", "intervalDays": 14, "note": "머리카락 제거" },
+        { "name": "곰팡이 제거", "icon": "🦠", "intervalDays": 30, "note": "실리콘, 줄눈" },
+        { "name": "칫솔 교체", "icon": "🪥", "intervalDays": 90 }
+      ]
+    },
+    {
+      "id": "laundry",
+      "name": "세탁",
+      "emoji": "🧺",
+      "optional": false,
+      "items": [
+        { "name": "빨래", "icon": "👕", "intervalDays": 3 },
+        { "name": "수건 빨래", "icon": "🧺", "intervalDays": 3 },
+        { "name": "베개 커버 교체", "icon": "🛌", "intervalDays": 7 },
+        { "name": "이불 빨래", "icon": "🛏️", "intervalDays": 14 },
+        { "name": "세탁기 통 세척", "icon": "🌀", "intervalDays": 30 },
+        { "name": "운동화 세탁", "icon": "👟", "intervalDays": 30 }
+      ]
+    },
+    {
+      "id": "trash",
+      "name": "쓰레기",
+      "emoji": "♻️",
+      "optional": false,
+      "items": [
+        { "name": "분리수거", "icon": "♻️", "intervalDays": 3, "note": "배출 요일이 정해져 있으면 그 주기로" },
+        { "name": "일반 쓰레기 버리기", "icon": "🗑️", "intervalDays": 3 }
+      ]
+    },
+    {
+      "id": "living",
+      "name": "생활·관리",
+      "emoji": "🏠",
+      "optional": false,
+      "items": [
+        { "name": "화분 물주기", "icon": "🪴", "intervalDays": 7, "note": "식물마다 다름" },
+        { "name": "장보기", "icon": "🛒", "intervalDays": 7 },
+        { "name": "공과금·카드값 확인", "icon": "💳", "intervalDays": 30 },
+        { "name": "에어컨 필터 청소", "icon": "❄️", "intervalDays": 90, "note": "사용하는 계절 기준" },
+        { "name": "공기청정기 필터 교체", "icon": "🍃", "intervalDays": 180 },
+        { "name": "정수기 필터 교체", "icon": "💧", "intervalDays": 180 },
+        { "name": "비상약 점검", "icon": "💊", "intervalDays": 180, "note": "유통기한 확인" },
+        { "name": "보일러 점검", "icon": "🌡️", "intervalDays": 365, "note": "겨울 전" },
+        { "name": "소화기·화재감지기 점검", "icon": "🧯", "intervalDays": 365 }
+      ]
+    },
+    {
+      "id": "pets",
+      "name": "반려동물",
+      "emoji": "🐾",
+      "optional": true,
+      "items": [
+        { "name": "밥그릇·물그릇 세척", "icon": "🐾", "intervalDays": 1 },
+        { "name": "화장실 모래 정리", "icon": "🐈", "intervalDays": 1, "note": "전체 갈이는 따로 등록" },
+        { "name": "목욕시키기", "icon": "🐕", "intervalDays": 30 }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,8 @@ import { TOAST_EXIT_MS, prefersReducedMotion } from '../lib/motion'
 export interface ToastMessage {
   key: string
   text: string
+  /** 둘째 줄에 작게 붙는 설명(예: "나중에 할 일로 이동") */
+  detail?: string
 }
 
 interface UndoToastProps {
@@ -46,7 +48,10 @@ function UndoToast({ message, onUndo }: UndoToastProps) {
       data-testid={leaving ? undefined : 'undo-toast'}
       aria-hidden={leaving || undefined}
     >
-      <span className="toast__text">{shown.text}</span>
+      <span className="toast__body">
+        <span className="toast__text">{shown.text}</span>
+        {shown.detail && <span className="toast__detail">{shown.detail}</span>}
+      </span>
       <button type="button" className="toast__action" onClick={onUndo} disabled={leaving} tabIndex={leaving ? -1 : undefined}>
         실행 취소
       </button>

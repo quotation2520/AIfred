@@ -8,7 +8,7 @@ import {
   updateChore,
 } from '../api/chores'
 import { badgeOf, lastDoneAtForRemaining, summarize } from '../lib/choreStatus'
-import { computeSections } from '../lib/dashboardLayout'
+import { computeSections, isLater, loadLaterOpen, saveLaterOpen } from '../lib/dashboardLayout'
 import {
   type ErrorText,
   adjustErrorText,
@@ -26,9 +26,16 @@ import UndoToast from './UndoToast'
 /** 실행 취소 알림이 떠 있는 시간(ms) */
 export const UNDO_TOAST_MS = 5000
 
+/** 접힌 "나중에 할 일"로 들어간 카드를 알리는 문구. 실행 취소 알림의 둘째 줄에 붙는다. */
+export const MOVED_LATER_TEXT = '나중에 할 일로 이동'
+
+/** 펼치기/접기 버튼의 위치 이동 애니메이션용 id. 집안일 id(UUID)와 겹치지 않는다. */
+const LATER_TOGGLE_FLIP_ID = 'later-toggle'
+
 interface DashboardProps {
   today: string
-  onAdd: () => void
+  /** "+"나 "집안일 추가"를 눌렀을 때. 지금 등록된(삭제 안 된) 집안일 이름을 넘긴다. */
+  onAdd: (takenNames: string[]) => void
   onEdit: (chore: ChoreRecord) => void
 }
 
@@ -41,9 +48,17 @@ type LoadState =
  * 실행 취소 알림. 연달아 완료·조절하면 마지막 것만 보여 준다(앞의 것도 서버에는 이미 저장돼 있다).
  * previous는 바꾸기 전의 집안일로, 실행 취소 때 화면을 바로 되돌리는 데 쓴다.
  */
-type UndoAction =
-  | { kind: 'complete'; key: string; completionId: string; choreId: string; name: string; previous: ChoreRecord }
-  | { kind: 'adjust'; key: string; choreId: string; name: string; badge: string; previous: ChoreRecord }
+type UndoAction = (
+  | { kind: 'complete'; completionId: string }
+  | { kind: 'adjust'; badge: string }
+) & {
+  key: string
+  choreId: string
+  name: string
+  previous: ChoreRecord
+  /** 이 조작으로 카드가 접힌 "나중에 할 일"로 들어가 화면에서 사라졌으면 true */
+  movedLater: boolean
+}
 
 function laterDate(a: string, b: string): string {
   return a >= b ? a : b
@@ -60,6 +75,9 @@ function toastText(action: UndoAction): string {
  * 완료 체크와 잔여일 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답의 집안일로 확정한다. 실패하면 원래대로 되돌린다.
  * 카드는 항상 남은 일수 순서의 제자리에 놓이고, 자리를 옮길 때는 위치 이동 애니메이션(useFlip)으로 보여 준다.
  * 옮겨 가는 동안에는 그 카드의 체크를 받지 않는다. 연달아 체크하다가 손가락 아래로 미끄러져 온 카드를 잘못 누르지 않게 하려는 것이다.
+ *
+ * 그 밖의 집안일 중 남은 일수 7일 이상(나중에 할 일)은 기본으로 접어 두고, 펼침 상태는 기기에 기억한다.
+ * 완료나 조절로 카드가 접힌 영역에 들어가 사라지면, 실행 취소 알림에 "나중에 할 일로 이동"을 덧붙이고 펼치기 버튼을 한 번 반짝인다.
  */
 function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
@@ -70,6 +88,10 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const [toast, setToast] = useState<UndoAction | null>(null)
   const toastSeq = useRef(0)
   const [actionError, setActionError] = useState<ErrorText | null>(null)
+  // 남은 일수 7일 이상(나중에 할 일)을 펼쳐 둘지. 기기에 기억하고, 읽지 못하면 접힌 상태로 시작한다.
+  const [laterOpen, setLaterOpen] = useState(loadLaterOpen)
+  // 카드가 접힌 영역으로 들어갈 때마다 늘려서 펼치기 버튼을 한 번 반짝이게 한다.
+  const [laterArrivals, setLaterArrivals] = useState(0)
   const flip = useFlip()
 
   useEffect(() => {
@@ -123,7 +145,20 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
   const chores = state.kind === 'ready' ? state.chores : []
   const summary = summarize(chores, today)
   const sections = computeSections(chores, today)
-  const hasChores = sections.today.length + sections.other.length > 0
+  const restCount = sections.other.length + sections.later.length
+  const hasChores = sections.today.length + restCount > 0
+
+  /** 접힌 상태에서 이 변경으로 카드가 나중에 할 일로 들어가(화면에서 사라지)면 true */
+  const hidesIntoLater = (before: ChoreRecord, after: ChoreRecord) =>
+    !laterOpen && !isLater(before, today) && isLater(after, today)
+
+  const handleAdd = () => onAdd(chores.filter((chore) => chore.deletedAt == null).map((chore) => chore.name))
+
+  const toggleLater = () => {
+    const next = !laterOpen
+    setLaterOpen(next)
+    saveLaterOpen(next)
+  }
 
   const handleComplete = (chore: ChoreRecord) => {
     if (pendingRef.current.has(chore.id) || chore.lastDoneAt === today) return
@@ -132,6 +167,8 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
     const completionId = newCompletionId()
     markPending(chore.id, true)
     setActionError(null)
+    const optimistic = { ...chore, lastDoneAt: laterDate(chore.lastDoneAt, today) }
+    if (hidesIntoLater(previous, optimistic)) setLaterArrivals((n) => n + 1)
     replaceChore(chore.id, (current) => ({ ...current, lastDoneAt: laterDate(current.lastDoneAt, today) }))
 
     // doneOn은 보내지 않고 서버의 오늘을 쓴다. 기기 시계가 서버보다 빠르면 자정 직후 미래 날짜로 422가 나기 때문이다.
@@ -139,7 +176,15 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
       .then(
         ({ chore: saved }) => {
           replaceChore(saved.id, () => saved)
-          setToast({ kind: 'complete', key: nextToastKey(), completionId, choreId: saved.id, name: saved.name, previous })
+          setToast({
+            kind: 'complete',
+            key: nextToastKey(),
+            completionId,
+            choreId: saved.id,
+            name: saved.name,
+            previous,
+            movedLater: hidesIntoLater(previous, saved),
+          })
         },
         (error: unknown) => {
           replaceChore(chore.id, () => previous)
@@ -160,6 +205,7 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
     const previous = chore
     markPending(chore.id, true)
     setActionError(null)
+    if (hidesIntoLater(previous, { ...chore, lastDoneAt })) setLaterArrivals((n) => n + 1)
     replaceChore(chore.id, (current) => ({ ...current, lastDoneAt }))
 
     updateChore(chore.id, { lastDoneAt })
@@ -173,6 +219,7 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
             name: saved.name,
             badge: badgeOf(remaining),
             previous,
+            movedLater: hidesIntoLater(previous, saved),
           })
         },
         (error: unknown) => {
@@ -259,7 +306,7 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
             <p className="onboarding__text">
               주기와 마지막으로 한 날을 적어 두면, 언제 다시 해야 하는지 알려 드려요.
             </p>
-            <button type="button" className="button button--primary button--large" onClick={onAdd}>
+            <button type="button" className="button button--primary button--large" onClick={handleAdd}>
               집안일 추가
             </button>
           </div>
@@ -278,13 +325,35 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
               )}
             </section>
 
-            {/* 모든 집안일이 오늘 할 일에 들어가면 이 영역은 숨긴다. */}
-            {sections.other.length > 0 && (
+            {/* 모든 집안일이 오늘 할 일에 들어가면 이 영역은 숨긴다.
+                남은 일수 7일 이상(나중에 할 일)은 기본으로 접고, 맨 아래 버튼으로 펼친다. 순서는 그대로 이어진다. */}
+            {restCount > 0 && (
               <section className="section" aria-labelledby="other-heading">
                 <h2 id="other-heading" className="section__title">
                   그 밖의 집안일
                 </h2>
-                <ul className="card-list">{sections.other.map(renderCard)}</ul>
+                {(sections.other.length > 0 || laterOpen) && (
+                  <ul className="card-list">
+                    {sections.other.map(renderCard)}
+                    {laterOpen && sections.later.map(renderCard)}
+                  </ul>
+                )}
+                {sections.later.length > 0 && (
+                  <button
+                    type="button"
+                    ref={flip.register(LATER_TOGGLE_FLIP_ID)}
+                    className="later-toggle"
+                    aria-expanded={laterOpen}
+                    onClick={toggleLater}
+                  >
+                    <span
+                      key={laterArrivals}
+                      className={`later-toggle__label${laterArrivals > 0 ? ' later-toggle__label--arrived' : ''}`}
+                    >
+                      {laterOpen ? '접기' : `나중에 할 일 ${sections.later.length}개 더 보기`}
+                    </span>
+                  </button>
+                )}
               </section>
             )}
           </>
@@ -306,9 +375,18 @@ function Dashboard({ today, onAdd, onEdit }: DashboardProps) {
       <div className="bottom-bar">
         <div className="bottom-bar__inner">
           <div className="bottom-bar__notice" aria-live="polite">
-            <UndoToast message={toast && { key: toast.key, text: toastText(toast) }} onUndo={handleUndo} />
+            <UndoToast
+              message={
+                toast && {
+                  key: toast.key,
+                  text: toastText(toast),
+                  ...(toast.movedLater && { detail: MOVED_LATER_TEXT }),
+                }
+              }
+              onUndo={handleUndo}
+            />
           </div>
-          <button type="button" className="fab" onClick={onAdd} aria-label="집안일 추가">
+          <button type="button" className="fab" onClick={handleAdd} aria-label="집안일 추가">
             +
           </button>
         </div>
