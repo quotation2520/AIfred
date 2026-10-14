@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import type { ChoreRecord } from './api/chores'
 import { MAX_INTERVAL_DAYS, MAX_LAST_DONE_AT, MIN_LAST_DONE_AT } from './components/ChoreForm'
+import { UNDO_TOAST_MS } from './components/Dashboard'
 import { jsonResponse, mockFetch, record } from './test/fetchMock'
 
 const TODAY = '2026-10-14'
@@ -129,11 +131,13 @@ describe('대시보드', () => {
     expect(within(ok).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('57')
   })
 
-  it('완료 체크 버튼은 준비 중으로 비활성이다', async () => {
+  it('완료 체크 버튼이 켜져 있고, 카드에 편집 단서(">")가 있다', async () => {
     await renderDashboard()
-    const check = within(cardOf(section('오늘 할 일'), '걸레질')).getByRole('button', { name: /완료 체크/ })
-    expect((check as HTMLButtonElement).disabled).toBe(true)
-    expect(check.getAttribute('aria-label')).toContain('준비 중')
+    const card = cardOf(section('오늘 할 일'), '걸레질')
+    const check = within(card).getByRole('button', { name: '걸레질 완료 체크' }) as HTMLButtonElement
+    expect(check.disabled).toBe(false)
+    const edit = within(card).getByRole('button', { name: '걸레질 D-Day 편집' })
+    expect(edit.querySelector('.chore-card__chevron')?.textContent).toBe('›')
   })
 
   it('오늘 할 일이 없으면 빈 상태 문구를 보여준다', async () => {
@@ -241,6 +245,226 @@ describe('오늘 날짜 갱신 (U1)', () => {
     expect(within(section('오늘 할 일')).getByText('D+2')).toBeTruthy()
     expect(within(section('오늘 할 일')).getByText('D+1')).toBeTruthy()
     expect(calls).toHaveLength(1)
+  })
+})
+
+describe('완료 체크 (F3)', () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((r) => {
+      resolve = r
+    })
+    return { promise, resolve }
+  }
+
+  /** 서버가 돌려줄 완료 응답: 마지막 수행일이 오늘로 바뀐 집안일과 완료 기록 */
+  function completed(chore: ChoreRecord, completionId: string) {
+    return {
+      completion: {
+        id: completionId,
+        choreId: chore.id,
+        doneAt: '2026-10-14T00:00:00Z',
+        doneOn: TODAY,
+        dueOn: '2026-10-12',
+        previousLastDoneAt: chore.lastDoneAt,
+        deletedAt: null,
+      },
+      chore: { ...chore, lastDoneAt: TODAY, updatedAt: '2026-10-14T00:00:00Z' },
+    }
+  }
+
+  function checkButton(region: HTMLElement, name: string): HTMLButtonElement {
+    return within(cardOf(region, name)).getByRole('button', { name: new RegExp(`^${name} (완료 체크|오늘 완료함)$`) })
+  }
+
+  function badgeOf(region: HTMLElement, name: string): string {
+    return cardOf(region, name).querySelector('.badge__text')?.textContent ?? ''
+  }
+
+  function gaugeOf(region: HTMLElement, name: string): string | null {
+    return within(cardOf(region, name)).getByRole('progressbar').getAttribute('aria-valuenow')
+  }
+
+  const WATERING = CHORES[1] // 화분 물주기, D+2
+
+  it('체크하면 카드가 바로 바뀌고(낙관적 갱신), 서버 응답으로 확정한 뒤 실행 취소 알림을 띄운다', async () => {
+    const user = userEvent.setup()
+    const response = deferred<Response>()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'POST /api/chores/a/completions': () => response.promise,
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const todaySection = section('오늘 할 일')
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D+2')
+
+    await user.click(checkButton(todaySection, '화분 물주기'))
+
+    // 응답 전: 게이지가 차고 배지가 바뀌고, 버튼은 "오늘 완료함"으로 눌리지 않는다.
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D-7')
+    expect(gaugeOf(todaySection, '화분 물주기')).toBe('100')
+    const check = checkButton(todaySection, '화분 물주기')
+    expect(check.getAttribute('aria-label')).toBe('화분 물주기 오늘 완료함')
+    expect(check.disabled).toBe(true)
+    // 요약은 바로 바뀐다.
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 2개 (밀린 일 1개 포함)')
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post?.url).toBe('/api/chores/a/completions')
+    const body = post?.body as { id: string; doneOn?: string }
+    expect(body.id).toMatch(UUID_RE)
+    expect(body.doneOn).toBeUndefined()
+
+    response.resolve(jsonResponse(completed(WATERING, body.id), 201))
+    const toast = await screen.findByTestId('undo-toast')
+    expect(toast.querySelector('.toast__text')?.textContent).toBe('화분 물주기 완료')
+    expect(within(toast).getByRole('button', { name: '실행 취소' })).toBeTruthy()
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D-7')
+    // 알림은 하단 막대 안, "+" 버튼과 같은 줄의 왼쪽에 있다.
+    expect(toast.closest('.bottom-bar__inner')?.contains(fab())).toBe(true)
+  })
+
+  it('저장에 실패하면 원래 상태로 되돌리고 오류를 알린다', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'POST /api/chores/a/completions': () => jsonResponse({ detail: '서버 고장' }, 500),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const todaySection = section('오늘 할 일')
+
+    await user.click(checkButton(todaySection, '화분 물주기'))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.querySelector('.error-notice__title')?.textContent).toBe('완료 체크를 저장하지 못했어요.')
+    expect(alert.querySelector('.error-notice__detail')?.textContent).toBe('오류 코드 500 · 서버 고장')
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D+2')
+    expect(checkButton(todaySection, '화분 물주기').disabled).toBe(false)
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 3개 (밀린 일 2개 포함)')
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+
+    await user.click(within(alert).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('실행 취소를 누르면 같은 완료 기록을 DELETE하고 원래 상태로 돌아간다', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'POST /api/chores/a/completions': (call) =>
+        jsonResponse(completed(WATERING, (call.body as { id: string }).id), 201),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    const todaySection = section('오늘 할 일')
+
+    await user.click(checkButton(todaySection, '화분 물주기'))
+    const toast = await screen.findByTestId('undo-toast')
+    const post = calls.find((c) => c.method === 'POST')
+    if (!post) throw new Error('POST가 없음')
+    const completionId = (post.body as { id: string }).id
+    // DELETE 경로는 완료 id로 정해지므로 여기서 등록한다.
+    const undo = deferred<Response>()
+    const { calls: undoCalls } = mockFetch({ [`DELETE /api/completions/${completionId}`]: () => undo.promise })
+
+    await user.click(within(toast).getByRole('button', { name: '실행 취소' }))
+
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+    expect(undoCalls.map((c) => `${c.method} ${c.url}`)).toEqual([`DELETE /api/completions/${completionId}`])
+    // 응답 전에도 원래 배지로 돌아가고, 요청이 끝날 때까지 체크 버튼은 눌리지 않는다.
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D+2')
+    expect(checkButton(todaySection, '화분 물주기').disabled).toBe(true)
+
+    undo.resolve(jsonResponse(WATERING))
+    await waitFor(() => expect(checkButton(todaySection, '화분 물주기').disabled).toBe(false))
+    expect(badgeOf(todaySection, '화분 물주기')).toBe('D+2')
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 3개 (밀린 일 2개 포함)')
+  })
+
+  it('요청이 진행 중이면 같은 카드를 다시 눌러도 요청을 또 보내지 않는다', async () => {
+    const response = deferred<Response>()
+    // 오늘 이미 완료 표시가 되지 않는 경우(마지막 수행일이 미래)에도 진행 중에는 막는다.
+    const future = record('g', '가습기 청소', 3, '2026-10-20')
+    const { calls } = mockFetch({
+      'GET /api/chores': () => jsonResponse([...CHORES, future]),
+      'POST /api/chores/a/completions': () => response.promise,
+      'POST /api/chores/g/completions': () => response.promise,
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+
+    const watering = checkButton(section('오늘 할 일'), '화분 물주기')
+    fireEvent.click(watering)
+    fireEvent.click(watering)
+    const humidifier = checkButton(section('그 밖의 집안일'), '가습기 청소')
+    fireEvent.click(humidifier)
+    expect(humidifier.disabled).toBe(true)
+    expect(humidifier.getAttribute('aria-busy')).toBe('true')
+    fireEvent.click(humidifier)
+
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual([
+      '/api/chores/a/completions',
+      '/api/chores/g/completions',
+    ])
+  })
+
+  it('오늘 이미 완료한 집안일은 "오늘 완료함"으로 보이고 눌리지 않는다', async () => {
+    const { calls } = await renderDashboard([...CHORES, record('d', '설거지', 2, TODAY)])
+    const check = checkButton(section('그 밖의 집안일'), '설거지')
+    expect(check.getAttribute('aria-label')).toBe('설거지 오늘 완료함')
+    expect(check.disabled).toBe(true)
+    expect(check.className).toContain('chore-card__check--done')
+    fireEvent.click(check)
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
+  it('실행 취소 알림이 떠 있는 동안은 완료한 카드가 제자리에 있고, 알림이 닫히면 옮겨진다', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    mockFetch({
+      'GET /api/chores': () => jsonResponse(CHORES),
+      'POST /api/chores/e/completions': (call) =>
+        jsonResponse(completed(CHORES[4], (call.body as { id: string }).id), 201),
+      'POST /api/chores/b/completions': (call) =>
+        jsonResponse(completed(CHORES[3], (call.body as { id: string }).id), 201),
+    })
+    render(<App today={TODAY} />)
+    await waitDashboard()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+
+    // 연달아 두 개를 완료한다. 알림은 마지막 것만 보인다.
+    await user.click(checkButton(section('오늘 할 일'), '분리수거'))
+    await screen.findByText('분리수거 완료')
+    await user.click(checkButton(section('오늘 할 일'), '걸레질'))
+    await screen.findByText('걸레질 완료')
+    expect(screen.queryByText('분리수거 완료')).toBeNull()
+
+    // 알림이 떠 있는 동안: 배치는 그대로, 카드 내용과 요약은 바뀐다.
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '냉장고 청소'])
+    expect(badgeOf(section('오늘 할 일'), '분리수거')).toBe('D-7')
+    expect(badgeOf(section('오늘 할 일'), '걸레질')).toBe('D-3')
+    expect(screen.getByTestId('summary').textContent).toBe('오늘 할 일 1개 (밀린 일 1개 포함)')
+
+    // 마지막 완료 뒤 거의 5초가 지나도 아직 그대로다.
+    act(() => {
+      vi.advanceTimersByTime(UNDO_TOAST_MS - 100)
+    })
+    expect(screen.getByTestId('undo-toast')).toBeTruthy()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['분리수거', '화분 물주기', '걸레질'])
+
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    expect(screen.queryByTestId('undo-toast')).toBeNull()
+    expect(cardNames(section('오늘 할 일'))).toEqual(['화분 물주기'])
+    expect(cardNames(section('그 밖의 집안일'))).toEqual(['이불 빨래', '걸레질', '분리수거', '냉장고 청소'])
   })
 })
 

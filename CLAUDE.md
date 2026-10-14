@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-AIFred는 주기적인 집안일을 게이지와 D-n / D-Day / D+n으로 보여주는 개인용 대시보드다. PC에서 도는 로컬 서버(FastAPI + SQLite)와 Android 폰에서 쓰는 React PWA로 구성된다. 요구사항은 `docs/PRD.md`에 있다. 이 파일은 Claude Docs "AIFred PRD 초안"의 사본이고, 원본이 바뀌면 함께 갱신한다.
+AIFred는 주기적인 집안일을 게이지와 D-n / D-Day / D+n으로 보여주는 개인용 대시보드다. PC에서 도는 로컬 서버(FastAPI + SQLite)와 Android 폰에서 쓰는 React PWA로 구성된다. 요구사항 원본은 `docs/PRD.md`다.
 
 ## 명령 (Windows, PowerShell 5.1)
 
@@ -17,6 +17,7 @@ PowerShell 5.1에서는 `&&`가 동작하지 않는다. 명령을 이을 때는 
 
 # web/
 npm run dev          # 5173, /api → http://127.0.0.1:8000 프록시
+npm run dev:lan      # 같은 Wi-Fi의 폰에서 http://<PC IP>:5173 으로 접속 (README "폰에서 접속")
 npm test             # vitest run
 npx vitest run src/lib/choreStatus.test.ts -t "PRD"                      # 일부만
 npm run typecheck    # tsc -b (app, node, screens 세 프로젝트)
@@ -43,16 +44,19 @@ npm run screens -- -g edit-form                                          # 시�
 - 시각은 UTC로 저장한다. SQLite는 naive datetime을 돌려주므로 `schemas.py`의 `UtcDatetime`에서 UTC로 정규화해 응답한다.
 - 현재 시각과 오늘 날짜는 `clock.py`의 FastAPI 의존성(`get_now`, `get_today`)으로만 얻는다. 테스트는 `dependency_overrides`로 이 값을 고정한다. `tests/conftest.py`의 `client` 픽스처는 tmp_path SQLite를 쓰고 오늘을 2026-10-12로 고정한다.
 - 삭제는 soft delete(`deleted_at`)다. 나중에 동기화(F8)로 삭제를 전달하기 위해서다. id는 클라이언트가 지정할 수 있는 UUID다(오프라인 생성 대비).
+- 완료 기록(`routers/completions.py`): 완료하면 `due_on`(그때의 예정일)과 `previous_last_done_at`을 저장하고, chore의 `last_done_at`을 max(기존, done_on)로 올린다. 실행 취소는 soft delete이고, `last_done_at`을 max(previous_last_done_at, 남은 기록의 done_on)로 되돌린다. 이 규칙은 가장 최근 완료만 취소한다고 가정한다. 이력(F6)이나 동기화(F8)에서 오래된 기록을 취소할 수 있게 되면 다시 설계해야 한다. 웹은 완료할 때 `doneOn`을 보내지 않고 서버의 오늘을 쓴다.
+- 같은 id로 다시 POST하면 기존 기록을 200으로 돌려준다(재시도에 안전).
+- 스키마 변경: 마이그레이션 도구가 없다. `db.py`의 `add_missing_columns()`가 시작할 때 없는 열을 추가한다. NOT NULL 열은 테이블이 비어 있을 때만 테이블을 다시 만들고, 행이 있으면 `SchemaUpgradeError`로 멈춘다.
 - 입력 범위는 서버(`schemas.py`)와 웹(`ChoreForm.tsx`)에 같은 값으로 들어 있다. 주기는 1~36500일, 마지막 수행일은 2000-01-01~2100-12-31이다. 이 범위가 없으면 날짜 계산이 overflow로 500을 낸다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
 ### 웹 구조
 - 라우터 없이 `App.tsx`의 상태로 대시보드와 추가·편집 화면을 오간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
+- 완료 체크는 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 실행 취소 알림이 떠 있는 동안에는 카드 배치를 고정(`lib/dashboardLayout.ts`)해서 목록이 갑자기 움직이지 않게 한다.
 - 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.
 
 ### 아직 없는 것 (PRD 기준)
-- 완료 체크와 실행 취소(F3)
 - 수행 이력(F6)
 - 정기 알림(F7: APScheduler, pywebpush, `/api/arrived`)
 - 오프라인과 동기화(F8: Dexie)

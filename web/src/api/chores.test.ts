@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse, mockFetch, record } from '../test/fetchMock'
-import { ApiError, createChore, deleteChore, formatDetail, listChores, newChoreId, updateChore } from './chores'
+import {
+  ApiError,
+  completeChore,
+  createChore,
+  deleteChore,
+  formatDetail,
+  listChores,
+  newChoreId,
+  newCompletionId,
+  undoCompletion,
+  updateChore,
+} from './chores'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -56,6 +67,31 @@ describe('chores API 클라이언트', () => {
 
   it('newChoreId는 UUID를 만든다', () => {
     expect(newChoreId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+
+  it('completeChore는 완료 기록을 POST하고, undoCompletion은 DELETE한 뒤 집안일을 돌려준다', async () => {
+    const chore = record('a', '화분 물주기', 7, '2026-10-14')
+    const completion = {
+      id: 'x',
+      choreId: 'a',
+      doneAt: '2026-10-14T00:00:00Z',
+      doneOn: '2026-10-14',
+      dueOn: '2026-10-12',
+      previousLastDoneAt: '2026-10-05',
+      deletedAt: null,
+    }
+    const restored = record('a', '화분 물주기', 7, '2026-10-05')
+    const { calls } = mockFetch({
+      'POST /api/chores/a/completions': () => jsonResponse({ completion, chore }, 201),
+      'DELETE /api/completions/x': () => jsonResponse(restored),
+    })
+    await expect(completeChore('a', { id: 'x', doneOn: '2026-10-14' })).resolves.toEqual({ completion, chore })
+    await expect(undoCompletion('x')).resolves.toEqual(restored)
+    expect(calls).toEqual([
+      { method: 'POST', url: '/api/chores/a/completions', body: { id: 'x', doneOn: '2026-10-14' } },
+      { method: 'DELETE', url: '/api/completions/x', body: undefined },
+    ])
+    expect(newCompletionId()).not.toBe(newCompletionId())
   })
 })
 

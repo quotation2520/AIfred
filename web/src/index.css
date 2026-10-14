@@ -25,8 +25,10 @@
   --radius: 12px;
   --max-width: 640px;
   --fab-size: 56px;
-  /* 하단 막대 높이: 위 여백 20px + "+" 버튼 + 아래 여백 12px */
-  --bottom-bar-height: calc(var(--fab-size) + 32px);
+  /* 하단 막대 높이: 위 여백 40px + "+" 버튼 + 아래 여백 10px.
+     위 여백이 막대 위 카드의 체크 버튼과 "+" 사이 간격이므로 손가락 하나(약 40px) 이상으로 둔다 (UX U2). */
+  --bottom-bar-top-gap: 40px;
+  --bottom-bar-height: calc(var(--fab-size) + var(--bottom-bar-top-gap) + 10px);
 
   color: var(--color-text);
   background: var(--color-bg);
@@ -228,20 +230,43 @@ main.dashboard {
   font-weight: 600;
 }
 
+/* 카드 탭 = 편집 단서 (UX U6) */
+.chore-card__chevron {
+  flex: none;
+  margin-left: -4px;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--color-muted);
+}
+
+/* 완료 체크: 눌러도 되는 버튼으로 뚜렷하게 보인다 (UX U6). */
 .chore-card__check {
   flex: none;
   width: 48px;
+  min-height: 48px;
+  align-self: center;
   margin: 8px 8px 8px 0;
-  border: 1px solid var(--color-border);
+  border: 2px solid var(--color-primary);
   border-radius: 50%;
   background: var(--color-surface);
   font-size: 1.25rem;
-  color: var(--color-muted);
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
 }
 
 .chore-card__check:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
+}
+
+/* 오늘 이미 완료함: 채워진 초록 체크 */
+.chore-card__check--done,
+.chore-card__check--done:disabled {
+  border-color: var(--color-ok);
+  background: var(--color-ok);
+  color: #ffffff;
+  opacity: 1;
 }
 
 .badge {
@@ -339,12 +364,66 @@ main.dashboard {
 
 .bottom-bar__inner {
   display: flex;
-  justify-content: flex-end;
   align-items: flex-end;
+  gap: 12px;
   max-width: var(--max-width);
   height: var(--bottom-bar-height);
   margin: 0 auto;
-  padding: 0 16px 12px;
+  padding: 0 16px 10px;
+}
+
+/* 실행 취소 알림 자리: 막대 안 "+" 왼쪽 (UX U6) */
+.bottom-bar__notice {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--fab-size);
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--radius);
+  background: #24292f;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+}
+
+.toast__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__action {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: #9ec2ff;
+  cursor: pointer;
+}
+
+/* 완료·실행 취소 실패 안내: 하단 막대 바로 위 */
+.action-error {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom, 0px) + 8px);
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.action-error .error-notice {
+  box-shadow: 0 2px 12px rgb(0 0 0 / 20%);
 }
 
 .fab {

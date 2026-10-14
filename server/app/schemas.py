@@ -133,3 +133,35 @@ class ChoreRead(CamelModel):
     created_at: UtcDatetime
     updated_at: UtcDatetime
     deleted_at: UtcDatetime | None
+
+
+class CompletionCreate(CamelModel):
+    """완료 체크 요청. id는 재시도에 안전하도록 클라이언트가 정한다."""
+
+    id: str | None = None
+    done_on: DateOnly | None = None
+    """완료한 날짜. 없으면 서버의 오늘. 오늘보다 미래면 422"""
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_id(value)
+
+
+class CompletionRead(CamelModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    chore_id: str
+    done_at: UtcDatetime
+    done_on: date
+    due_on: date
+    previous_last_done_at: date
+    deleted_at: UtcDatetime | None
+
+
+class CompletionResult(CamelModel):
+    """완료 체크 응답. 갱신된 집안일을 함께 돌려줘 화면이 바로 반영하게 한다."""
+
+    completion: CompletionRead
+    chore: ChoreRead

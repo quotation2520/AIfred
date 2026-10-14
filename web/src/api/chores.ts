@@ -121,3 +121,49 @@ export async function deleteChore(id: string): Promise<void> {
 export function newChoreId(): string {
   return crypto.randomUUID()
 }
+
+/** 서버 CompletionRead 응답 (F3 완료 기록). 날짜는 "YYYY-MM-DD", 시각은 UTC ISO 8601. */
+export interface CompletionRecord {
+  id: string
+  choreId: string
+  doneAt: string
+  doneOn: string
+  /** 완료 시점의 예정일 */
+  dueOn: string
+  /** 실행 취소 때 복원할 마지막 수행일 */
+  previousLastDoneAt: string
+  deletedAt: string | null
+}
+
+/** 완료 체크 요청. id는 재시도해도 중복되지 않도록 클라이언트가 만든다(newCompletionId). */
+export interface CompleteChoreInput {
+  id: string
+  /** 없으면 서버의 오늘 */
+  doneOn?: string
+}
+
+/** 완료 체크 응답: 완료 기록과 갱신된 집안일 */
+export interface CompleteChoreResult {
+  completion: CompletionRecord
+  chore: ChoreRecord
+}
+
+/** POST /api/chores/{choreId}/completions. 같은 id로 다시 보내면 서버는 기존 기록을 돌려준다. */
+export async function completeChore(choreId: string, input: CompleteChoreInput): Promise<CompleteChoreResult> {
+  const response = await request(`${BASE}/${encodeURIComponent(choreId)}/completions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return (await response.json()) as CompleteChoreResult
+}
+
+/** DELETE /api/completions/{id}. 실행 취소. 마지막 수행일을 되돌린 집안일을 돌려준다. */
+export async function undoCompletion(id: string): Promise<ChoreRecord> {
+  const response = await request(`/api/completions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return (await response.json()) as ChoreRecord
+}
+
+/** 새 완료 기록 id */
+export function newCompletionId(): string {
+  return crypto.randomUUID()
+}

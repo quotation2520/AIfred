@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../api/chores'
-import { deleteErrorText, loadErrorText, saveErrorText, technicalDetail } from './errorMessages'
+import {
+  completeErrorText,
+  deleteErrorText,
+  loadErrorText,
+  saveErrorText,
+  technicalDetail,
+  undoErrorText,
+} from './errorMessages'
 
 describe('오류 문구', () => {
   it('기술 정보는 상태 코드와 원문, 네트워크 오류는 메시지만 담는다', () => {
@@ -20,6 +27,18 @@ describe('오류 문구', () => {
     expect(saveErrorText(new ApiError(422, [])).hint).toBe('입력한 값을 서버가 받지 않았어요. 입력 칸을 확인해 주세요.')
     expect(saveErrorText(new ApiError(404, '집안일을 찾을 수 없다')).hint).toContain('이미 삭제된 집안일')
     expect(saveErrorText(new ApiError(500, 'x')).hint).toContain('다시 저장해 주세요.')
+  })
+
+  it('완료 체크와 실행 취소 오류도 404와 그 밖을 나눈다', () => {
+    expect(completeErrorText(new TypeError('Failed to fetch'))).toEqual({
+      title: '완료 체크를 저장하지 못했어요.',
+      hint: 'PC 서버가 켜져 있는지, 집 Wi-Fi에 연결돼 있는지 확인한 뒤 다시 체크해 주세요.',
+      detail: 'Failed to fetch',
+    })
+    expect(completeErrorText(new ApiError(404, 'x')).hint).toContain('이미 삭제된 집안일')
+    expect(undoErrorText(new ApiError(500, 'x')).title).toBe('실행 취소하지 못했어요.')
+    expect(undoErrorText(new ApiError(500, 'x')).hint).toContain('완료 기록은 그대로 남아 있어요.')
+    expect(undoErrorText(new ApiError(404, 'x')).hint).toContain('이미 취소됐거나')
   })
 
   it('삭제 오류도 404와 그 밖을 나눈다', () => {

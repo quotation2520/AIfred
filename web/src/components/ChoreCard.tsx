@@ -7,18 +7,23 @@ interface ChoreCardProps {
   chore: ChoreRecord
   today: string
   onOpen: (chore: ChoreRecord) => void
+  onComplete: (chore: ChoreRecord) => void
+  /** 이 카드의 완료·실행 취소 요청이 진행 중이면 true. 그동안 체크 버튼을 다시 누를 수 없다. */
+  busy?: boolean
 }
 
 /**
- * PRD 6장 카드: 아이콘 · 이름 · 게이지 바 · 배지 · 완료 체크 버튼(F3 전까지 비활성).
+ * PRD 6장 카드: 아이콘 · 이름 · 게이지 바 · 배지 · 완료 체크 버튼(F3).
  * 지연 카드는 색 말고도 배지의 경고 표시와 왼쪽 굵은 띠로 구분한다 (UX U4).
+ * 카드 본문을 누르면 편집이고, 오른쪽 ">" 표시가 그 단서다 (UX U6).
  */
-function ChoreCard({ chore, today, onOpen }: ChoreCardProps) {
+function ChoreCard({ chore, today, onOpen, onComplete, busy = false }: ChoreCardProps) {
   const status = computeStatus(chore.lastDoneAt, chore.intervalDays, today)
   const gauge = Math.round(status.gaugePercent)
   const icon = chore.icon?.trim() || DEFAULT_ICON
   const overdue = status.status === 'overdue'
   const spoken = overdue ? `${status.badge} (${-status.remainingDays}일 지남)` : status.badge
+  const doneToday = chore.lastDoneAt === today
 
   return (
     <li className={`chore-card chore-card--${status.status}`} data-status={status.status}>
@@ -54,13 +59,17 @@ function ChoreCard({ chore, today, onOpen }: ChoreCardProps) {
             <span className="gauge__fill" style={{ width: `${gauge}%` }} />
           </span>
         </span>
+        <span className="chore-card__chevron" aria-hidden="true">
+          ›
+        </span>
       </button>
       <button
         type="button"
-        className="chore-card__check"
-        disabled
-        aria-label={`${chore.name} 완료 체크 (준비 중)`}
-        title="완료 체크는 준비 중이에요"
+        className={`chore-card__check${doneToday ? ' chore-card__check--done' : ''}`}
+        disabled={doneToday || busy}
+        aria-busy={busy || undefined}
+        aria-label={doneToday ? `${chore.name} 오늘 완료함` : `${chore.name} 완료 체크`}
+        onClick={() => onComplete(chore)}
       >
         ✓
       </button>

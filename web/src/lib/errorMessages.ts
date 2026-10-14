@@ -42,6 +42,22 @@ export function saveErrorText(error: unknown): ErrorText {
   return { title: '저장하지 못했어요.', hint, detail: technicalDetail(error) }
 }
 
+/** 완료 체크 실패. 카드는 원래 상태로 돌아간다. */
+export function completeErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `${CONNECTION_HINT} 다시 체크해 주세요.`
+  if (status === 404) hint = '이미 삭제된 집안일일 수 있어요. 화면을 새로고침해 목록을 다시 확인해 주세요.'
+  return { title: '완료 체크를 저장하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
+/** 실행 취소 실패. 완료 기록은 서버에 그대로 남아 있다. */
+export function undoErrorText(error: unknown): ErrorText {
+  const status = statusOf(error)
+  let hint = `완료 기록은 그대로 남아 있어요. ${CONNECTION_HINT} 카드를 눌러 마지막 수행일을 고쳐 주세요.`
+  if (status === 404) hint = '이미 취소됐거나 삭제된 기록이에요. 화면을 새로고침해 목록을 다시 확인해 주세요.'
+  return { title: '실행 취소하지 못했어요.', hint, detail: technicalDetail(error) }
+}
+
 export function deleteErrorText(error: unknown): ErrorText {
   const hint = statusOf(error) === 404 ? MISSING_HINT : `${CONNECTION_HINT} 다시 삭제해 주세요.`
   return { title: '삭제하지 못했어요.', hint, detail: technicalDetail(error) }
