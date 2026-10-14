@@ -53,6 +53,7 @@ npm run screens -- -g edit-form                                          # 시�
 - 라우터 없이 `App.tsx`의 상태로 대시보드와 추가·편집 화면을 오간다. 대시보드로 돌아올 때 목록을 다시 불러온다.
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
 - 완료 체크는 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 실행 취소 알림이 떠 있는 동안에는 카드 배치를 고정(`lib/dashboardLayout.ts`)해서 목록이 갑자기 움직이지 않게 한다.
+- 폰은 HTTP(`http://<PC IP>:5173`)로 접속하므로 HTTPS 전용 브라우저 API(`crypto.randomUUID`, 서비스 워커, 클립보드 등)를 쓸 수 없다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
 - 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.
 

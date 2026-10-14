@@ -11,6 +11,7 @@ import {
   newCompletionId,
   undoCompletion,
   updateChore,
+  uuidV4,
 } from './chores'
 
 afterEach(() => {
@@ -108,5 +109,21 @@ describe('formatDetail', () => {
   it('문자열은 그대로, 없으면 기본 문구', () => {
     expect(formatDetail('이미 있는 id다')).toBe('이미 있는 id다')
     expect(formatDetail(null)).toBe('알 수 없는 오류')
+  })
+})
+
+describe('uuidV4', () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  it('randomUUID가 없는 HTTP 접속에서도 v4 형식을 만든다', () => {
+    const real = globalThis.crypto
+    vi.stubGlobal('crypto', { getRandomValues: real.getRandomValues.bind(real) })
+    const ids = new Set(Array.from({ length: 50 }, () => uuidV4()))
+    expect(ids.size).toBe(50)
+    for (const id of ids) expect(id).toMatch(UUID_V4)
+  })
+
+  it('randomUUID가 있으면 그것을 쓴다', () => {
+    expect(uuidV4()).toMatch(UUID_V4)
   })
 })

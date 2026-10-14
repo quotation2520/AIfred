@@ -117,9 +117,22 @@ export async function deleteChore(id: string): Promise<void> {
   await request(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+/**
+ * UUID v4. crypto.randomUUID는 HTTPS나 localhost에서만 있으므로,
+ * 폰이 HTTP(http://<PC IP>:5173)로 접속할 때는 getRandomValues로 만든다.
+ */
+export function uuidV4(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 /** 새 집안일 id. 이후 오프라인 생성(F8)을 대비해 클라이언트에서 만든다. */
 export function newChoreId(): string {
-  return crypto.randomUUID()
+  return uuidV4()
 }
 
 /** 서버 CompletionRead 응답 (F3 완료 기록). 날짜는 "YYYY-MM-DD", 시각은 UTC ISO 8601. */
@@ -165,5 +178,5 @@ export async function undoCompletion(id: string): Promise<ChoreRecord> {
 
 /** 새 완료 기록 id */
 export function newCompletionId(): string {
-  return crypto.randomUUID()
+  return uuidV4()
 }
