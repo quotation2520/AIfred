@@ -16,8 +16,9 @@ $env:AIFRED_DB_PATH = "data\dev.db"; .\.venv\Scripts\python.exe -m uvicorn app.m
 .\.venv\Scripts\python.exe -m pytest tests/test_chores_api.py -k "patch"   # 일부만
 
 # 상시 실행(운영, 저장소 루트에서) — 자세한 내용은 README "매일 쓰기"
-.\scriptsuild-web.ps1          # 웹 빌드(배포)
-.\scriptsun-server.ps1         # 운영 서버 0.0.0.0:8080, 실제 DB server\dataifred.db, 로그 server\logs.\scripts\install-autostart.ps1  # 작업 스케줄러 "AIFred Server"(로그온 시 실행) 등록 / uninstall-autostart.ps1로 해제
+.\scripts\build-web.ps1          # 웹 빌드(배포)
+.\scripts\run-server.ps1         # 운영 서버 0.0.0.0:8080, 실제 DB server\data\aifred.db, 로그 server\logs
+.\scripts\install-autostart.ps1  # 작업 스케줄러 "AIFred Server"(로그온 시 실행) 등록 / uninstall-autostart.ps1로 해제
 
 # web/
 npm run dev          # 5173, /api → http://127.0.0.1:8000 프록시
