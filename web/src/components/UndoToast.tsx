@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useUpdateHold } from '../lib/appUpdate'
 import { TOAST_EXIT_MS, prefersReducedMotion } from '../lib/motion'
 
 /** 알림 하나. key가 바뀌면 새 알림으로 보고 나타나는 효과를 다시 보여 준다. */
@@ -30,6 +31,9 @@ function UndoToast({ message, onUndo }: UndoToastProps) {
     if (prefersReducedMotion()) setShown(null)
     else setLeaving(true)
   }
+
+  // 실행 취소를 누를 수 있는 동안은 새 버전 새로고침을 막는다.
+  useUpdateHold(shown !== null && !leaving)
 
   useEffect(() => {
     if (!leaving) return

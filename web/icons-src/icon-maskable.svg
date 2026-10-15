@@ -1,0 +1,12 @@
+<!-- AIFred 앱 아이콘 (purpose: maskable, apple-touch-icon). 배경을 끝까지 채우고(기기가 모양을 잘라 낸다),
+     그림은 가운데 지름 80% 안전 영역 안에 들어가게 icon.svg의 그림을 0.78배로 줄였다.
+     PNG는 make-icons.mjs가 만든다(web/에서 npm run icons). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#2f6fde"/>
+  <g transform="translate(256 256) scale(0.78) translate(-256 -256)"
+     fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 250 L256 136 L384 250"/>
+    <path d="M168 224 V384 H344 V224"/>
+    <path d="M212 306 L246 340 L304 274"/>
+  </g>
+</svg>

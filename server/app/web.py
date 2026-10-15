@@ -4,7 +4,7 @@
 - /api 라우트가 항상 우선한다. 웹은 모든 라우트를 등록한 뒤 맨 마지막에 / 에 붙인다.
 - 화면 이동은 주소 해시(#/add 등)라서 SPA fallback(모르는 경로에 index.html)은 넣지 않는다.
 - 캐시: 파일 이름에 해시가 붙은 assets/ 는 오래 캐시하고, 나머지(index.html, sw.js,
-  registerSW.js, manifest)는 no-cache로 매번 확인하게 한다. 그래야 다시 빌드한 뒤
+  manifest, 아이콘)는 no-cache로 매번 확인하게 한다. 그래야 다시 빌드한 뒤
   폰에 옛 화면이 남지 않는다.
 """
 

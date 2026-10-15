@@ -3,7 +3,11 @@
 #
 # 사용: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-server.ps1
 #       [-Port 8080] [-BindHost 0.0.0.0] [-DbPath server\data\aifred.db] [-LogDir server\logs]
+#       [-CertFile certs\aifred.pem] [-KeyFile certs\aifred-key.pem]
 #
+# - HTTPS: 인증서(-CertFile)와 키(-KeyFile)가 둘 다 있으면 HTTPS로, 아니면 HTTP로 뜬다.
+#   기본 경로는 저장소 루트의 certs\aifred.pem, certs\aifred-key.pem(mkcert로 만든다, docs\host-setup.md).
+#   어느 쪽으로 떴는지 run-server.log에 남긴다. certs\와 *.pem은 Git에 넣지 않는다(.gitignore).
 # - --reload 없이 실행한다.
 # - 로그: <LogDir>\server.log(서버), access.log(요청). 각각 1MB가 넘으면 회전하고 몇 개만 남긴다.
 #   run-server.log에는 이 스크립트의 시작·종료 기록, stderr.log에는 로깅이 설정되기 전 오류가 남는다.
@@ -13,7 +17,9 @@ param(
     [int]$Port = 8080,
     [string]$BindHost = '0.0.0.0',
     [string]$DbPath = '',
-    [string]$LogDir = ''
+    [string]$LogDir = '',
+    [string]$CertFile = '',
+    [string]$KeyFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,8 +29,12 @@ $serverDir = Join-Path $repoRoot 'server'
 $python = Join-Path $serverDir '.venv\Scripts\python.exe'
 if (-not $DbPath) { $DbPath = Join-Path $serverDir 'data\aifred.db' }
 if (-not $LogDir) { $LogDir = Join-Path $serverDir 'logs' }
+if (-not $CertFile) { $CertFile = Join-Path $repoRoot 'certs\aifred.pem' }
+if (-not $KeyFile) { $KeyFile = Join-Path $repoRoot 'certs\aifred-key.pem' }
 $DbPath = [System.IO.Path]::GetFullPath($DbPath)
 $LogDir = [System.IO.Path]::GetFullPath($LogDir)
+$CertFile = [System.IO.Path]::GetFullPath($CertFile)
+$KeyFile = [System.IO.Path]::GetFullPath($KeyFile)
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $runLog = Join-Path $LogDir 'run-server.log'
@@ -100,7 +110,23 @@ $env:AIFRED_DB_PATH = $DbPath
 $env:PYTHONUTF8 = '1'
 
 $arguments = "-m uvicorn app.main:app --host $BindHost --port $Port --log-config `"$logConfigPath`""
-Write-RunLog "시작: http://${BindHost}:$Port  DB=$DbPath  로그=$LogDir"
+
+$hasCert = Test-Path -PathType Leaf $CertFile
+$hasKey = Test-Path -PathType Leaf $KeyFile
+if ($hasCert -and $hasKey) {
+    $arguments += " --ssl-certfile `"$CertFile`" --ssl-keyfile `"$KeyFile`""
+    $scheme = 'https'
+    $tlsNote = "HTTPS 인증서=$CertFile 키=$KeyFile"
+} else {
+    $scheme = 'http'
+    if ($hasCert -or $hasKey) {
+        $missing = if ($hasCert) { $KeyFile } else { $CertFile }
+        $tlsNote = "HTTP (주의: 인증서와 키 중 하나가 없습니다: $missing)"
+    } else {
+        $tlsNote = "HTTP (인증서 없음: $CertFile)"
+    }
+}
+Write-RunLog "시작: ${scheme}://${BindHost}:$Port  $tlsNote  DB=$DbPath  로그=$LogDir"
 
 $process = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $serverDir `
     -NoNewWindow -PassThru `

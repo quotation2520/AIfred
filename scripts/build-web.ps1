@@ -31,4 +31,4 @@ if (-not (Test-Path $index)) {
     exit 1
 }
 Write-Host "빌드 완료: $(Join-Path $webDir 'dist')" -ForegroundColor Green
-Write-Host "폰에서 앱을 새로 열면 새 화면이 나옵니다. 서버 코드를 바꿨다면 서버를 다시 시작하세요(README '매일 쓰기')."
+Write-Host "열려 있는 앱은 하던 일이 없을 때 저절로 새로고침됩니다. 서버 코드를 바꿨다면 서버를 다시 시작하세요(README '매일 쓰기')."

@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react'
+import { useUpdateHold } from '../lib/appUpdate'
 import { type DragIntent, clampRemaining, dragIntent, dragValue } from '../lib/gaugeSlider'
 
 interface GaugeSliderProps {
@@ -55,6 +56,8 @@ function GaugeSlider({
   // 이벤트가 렌더보다 먼저 이어서 올 수 있으므로 조절 중인 값을 ref에도 둔다.
   const draftRef = useRef<number | null>(null)
   const [dragging, setDragging] = useState(false)
+  // 조절하는 동안(끌기, 키보드로 고치고 아직 저장 전)은 새 버전 새로고침을 막는다.
+  useUpdateHold(dragging || draft !== null)
 
   const setDraftValue = (next: number) => {
     draftRef.current = next

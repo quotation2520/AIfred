@@ -4,6 +4,7 @@
  * JSON 필드는 camelCase다. 날짜(lastDoneAt)는 "YYYY-MM-DD", 시각은 UTC ISO 8601 문자열이다.
  */
 
+import { holdUpdate } from '../lib/appUpdate'
 import type { Chore } from '../lib/choreStatus'
 
 /** 서버 ChoreRead 응답. choreStatus의 Chore와 호환된다. */
@@ -84,16 +85,24 @@ async function readDetail(response: Response): Promise<unknown> {
   }
 }
 
-/** fetch 래퍼. 본문이 있으면 JSON으로 보내고, 실패 응답은 ApiError로 던진다. api/presets.ts도 쓴다. */
+/**
+ * fetch 래퍼. 본문이 있으면 JSON으로 보내고, 실패 응답은 ApiError로 던진다. api/presets.ts도 쓴다.
+ * 요청이 끝날 때까지 새 버전 새로고침을 막는다(lib/appUpdate.ts).
+ */
 export async function request(path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(path, {
-    ...init,
-    headers: init?.body !== undefined ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
-  })
-  if (!response.ok) {
-    throw new ApiError(response.status, await readDetail(response))
+  const release = holdUpdate()
+  try {
+    const response = await fetch(path, {
+      ...init,
+      headers: init?.body !== undefined ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
+    })
+    if (!response.ok) {
+      throw new ApiError(response.status, await readDetail(response))
+    }
+    return response
+  } finally {
+    release()
   }
-  return response
 }
 
 export async function listChores(): Promise<ChoreRecord[]> {

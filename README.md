@@ -55,38 +55,22 @@ npm run typecheck   # tsc
 npm run lint        # oxlint
 npm run build       # 프로덕션 빌드 (dist/)
 npm run screens     # 화면 스크린샷 (UX 리뷰용, web/README.md)
+npm run icons       # 앱 아이콘 PNG·favicon을 icons-src/*.svg에서 다시 만든다 (public/, 설치된 Chrome 사용)
 ```
 
 ## 매일 쓰기 (상시 실행)
 
-PC에 로그온하면 운영 서버가 창 없이 자동으로 뜨고, 폰은 `http://<PC IP>:8080`으로 접속한다. FastAPI 하나가 빌드된 웹(`web/dist`)과 `/api`를 함께 제공하고, 실제 데이터 `server/data/aifred.db`를 쓴다. 개발 서버(8000, 5173, `dev.db`)와 따로 돈다.
+운영 서버는 **집 PC**에서 돈다(이 저장소를 OneDrive 밖, 예: `C:\dev\AIfred`에 clone). 집 PC에 로그온하면 서버가 창 없이 자동으로 HTTPS로 뜨고, 폰은 `https://<집PC IP>:8080`을 홈 화면에 앱(PWA)으로 설치해 쓴다. FastAPI 하나가 빌드된 웹(`web/dist`)과 `/api`를 함께 제공하고, 실제 데이터 `server/data/aifred.db`를 쓴다. 개발 서버(8000, 5173, `dev.db`)와 따로 돈다.
+
+**처음 설치**(프로그램 설치, clone, 데이터 옮기기, mkcert 인증서, 폰에 CA 설치, 자동 실행, 방화벽, 앱 설치, 문제 해결)는 [docs/host-setup.md](docs/host-setup.md)를 따른다. 이 절에는 설치 뒤 매일 쓰는 명령만 둔다.
 
 스크립트는 저장소 루트에서 실행한다. 실행 정책 때문에 막히면 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\...ps1` 형태로 실행한다.
-
-### 처음 설치
-
-```powershell
-# 1. 웹 빌드 (web/dist). server venv와 web node_modules는 위 절에서 설치해 둔다.
-.\scripts\build-web.ps1
-
-# 2. 자동 실행 등록: 작업 스케줄러에 "AIFred Server"(로그온 시, 창 없음, 실패하면 1분 간격 3회 재시작,
-#    배터리에서도 실행, 시간 제한 없음). 관리자 권한은 필요 없다. -StartNow를 붙이면 바로 시작한다.
-.\scripts\install-autostart.ps1 -StartNow
-
-# 3. 방화벽: 관리자 PowerShell에서 한 번 (2번을 관리자로 실행했다면 이미 추가됐다)
-New-NetFirewallRule -DisplayName "AIFred Server 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow -Profile Private
-```
-
-Wi-Fi 네트워크 프로필이 "공용"이면 "개인"으로 바꿔야 폰에서 접속된다.
-
-### 폰 주소
-
-`http://<PC IP>:8080` (PC IP는 `ipconfig`의 Wi-Fi "IPv4 주소"). PC에서는 `http://localhost:8080`.
+`scripts\run-server.ps1`은 `certs\aifred.pem`과 `certs\aifred-key.pem`이 둘 다 있으면 HTTPS로, 없으면 HTTP로 뜨고(`-CertFile`, `-KeyFile`로 경로를 바꿀 수 있다), 어느 쪽인지 `run-server.log`에 남긴다.
 
 ### 업데이트
 
 ```powershell
-# 화면(web/)만 바뀌었으면 빌드만 하면 된다. 서버가 요청마다 web/dist를 읽는다. 폰에서 앱을 새로 열면 반영된다.
+# 화면(web/)만 바뀌었으면 빌드만 하면 된다. 서버가 요청마다 web/dist를 읽는다.
 .\scripts\build-web.ps1
 
 # 서버 코드(server/)가 바뀌었거나, 서버가 web/dist 없이 시작됐다면 서버를 다시 시작한다.
@@ -95,8 +79,8 @@ Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
 Start-ScheduledTask -TaskName "AIFred Server"
 ```
 
-서버를 다시 시작하면 시작할 때 실제 DB에 스키마 변경(없는 열 추가)이 적용된다.
-PC의 브라우저(`localhost`)에서는 서비스 워커가 화면을 캐시하므로, 업데이트 뒤 한 번 더 새로 고쳐야 새 화면이 나올 수 있다. 폰(HTTP)에서는 서비스 워커가 동작하지 않고, `index.html`은 매번 서버에 확인하므로 다시 열면 바로 반영된다.
+서버를 다시 시작하면 시작할 때 실제 DB에 스키마 변경(없는 열 추가)이 적용된다. 집 PC에서 `git pull`부터 하는 전체 순서는 [docs/host-setup.md](docs/host-setup.md) "6. 업데이트 방법".
+앱(서비스 워커)은 새 버전을 받아 두었다가, 하던 일(시트·메뉴, 저장 중, 실행 취소 알림, 게이지 조절)이 없고 잠깐 조작이 없을 때 저절로 새로고침한다. 뒤에 두었던 앱은 다시 꺼낼 때 새 버전을 확인한다(`web/src/lib/appUpdate.ts`).
 
 ### 로그
 
@@ -117,7 +101,7 @@ Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
 .\scripts\uninstall-autostart.ps1
 ```
 
-작업 스케줄러 없이 직접 띄워 보려면 `.\scripts\run-server.ps1`을 실행한다(`-Port`, `-DbPath`, `-LogDir`로 바꿀 수 있다). 8080이 이미 쓰이고 있으면 기록만 남기고 끝난다.
+작업 스케줄러 없이 직접 띄워 보려면 `.\scripts\run-server.ps1`을 실행한다(`-Port`, `-DbPath`, `-LogDir`, `-CertFile`, `-KeyFile`로 바꿀 수 있다). 8080이 이미 쓰이고 있으면 기록만 남기고 끝난다.
 
 ## 폰에서 접속 (개발용, 집 Wi-Fi)
 
@@ -131,4 +115,4 @@ Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
    `New-NetFirewallRule -DisplayName "AIFred dev 5173" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow -Profile Private`
    Wi-Fi 네트워크 프로필이 "공용"이면 "개인"으로 바꿔야 한다.
 
-HTTP로 접속하므로 홈 화면 설치(PWA), 오프라인 실행, 푸시 알림은 아직 동작하지 않는다. 이 기능들은 HTTPS(mkcert)가 필요하며 알림·동기화(F7, F8) 단계에서 다룬다.
+개발 서버는 HTTP로 접속하므로 홈 화면 설치(PWA)와 서비스 워커가 동작하지 않는다. 앱 설치는 HTTPS로 뜨는 운영 서버([docs/host-setup.md](docs/host-setup.md))에서 한다.

@@ -42,7 +42,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal `
-        -Settings $settings -Description 'AIFred 운영 서버 (http://<PC IP>:8080). scripts\run-server.ps1' `
+        -Settings $settings -Description 'AIFred 운영 서버 (https://<PC IP>:8080, certs\가 없으면 http). scripts\run-server.ps1' `
         -Force | Out-Null
 } catch {
     Write-Host "작업 스케줄러 등록 실패: $($_.Exception.Message)" -ForegroundColor Red
@@ -51,9 +51,15 @@ try {
 }
 Write-Host "작업 '$taskName' 을 등록했습니다. 다음 로그온부터 서버가 자동으로 시작됩니다." -ForegroundColor Green
 
+$hasCerts = (Test-Path (Join-Path $repoRoot 'certs\aifred.pem')) -and (Test-Path (Join-Path $repoRoot 'certs\aifred-key.pem'))
+$scheme = if ($hasCerts) { 'https' } else { 'http' }
+if (-not $hasCerts) {
+    Write-Host "참고: certs\aifred.pem, certs\aifred-key.pem 이 없어 HTTP로 뜹니다. 폰에 앱으로 설치하려면 HTTPS가 필요합니다(docs\host-setup.md)." -ForegroundColor Yellow
+}
+
 if ($StartNow) {
     Start-ScheduledTask -TaskName $taskName
-    Write-Host "지금 서버를 시작했습니다: http://localhost:$Port"
+    Write-Host "지금 서버를 시작했습니다: ${scheme}://localhost:$Port"
 } else {
     Write-Host "지금 바로 시작하려면: Start-ScheduledTask -TaskName '$taskName'"
 }

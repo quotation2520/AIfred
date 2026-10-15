@@ -1,0 +1,10 @@
+<!-- AIFred 앱 아이콘 (purpose: any, favicon). 둥근 사각 배경(앱 주 색 #2f6fde) 위에 집과 체크.
+     PNG는 make-icons.mjs가 만든다(web/에서 npm run icons). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#2f6fde"/>
+  <g fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 250 L256 136 L384 250"/>
+    <path d="M168 224 V384 H344 V224"/>
+    <path d="M212 306 L246 340 L304 274"/>
+  </g>
+</svg>

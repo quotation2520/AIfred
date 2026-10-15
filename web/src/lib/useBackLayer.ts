@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import { useUpdateHold } from './appUpdate'
 import type { HistoryLayer, HistoryStack } from './historyStack'
 
 /** App이 만든 방문 기록 관리자. 없으면(컴포넌트만 따로 그린 테스트) 층을 쌓지 않는다. */
@@ -19,8 +20,10 @@ interface BackLayerOptions {
  * open인 동안 방문 기록에 층 하나를 쌓는다. 뒤로 가기를 누르면 onBack이 불린다.
  * onBack은 닫는 상태 변경을 하고, 닫지 않으려면(확인 창에서 취소) false를 돌려준다.
  * 화면에서 닫혀 open이 false가 되면 기록에서 이 층을 걷어 낸다.
+ * 열려 있는 동안은 새 버전 새로고침도 막는다(lib/appUpdate.ts). 시트·메뉴에서 하던 일이 날아가지 않게 한다.
  */
 export function useBackLayer(open: boolean, onBack: () => boolean | void, options: BackLayerOptions = {}): void {
+  useUpdateHold(open)
   const contextStack = useContext(HistoryStackContext)
   const stack = options.stack === undefined ? contextStack : options.stack
   const onBackRef = useRef(onBack)

@@ -17,7 +17,7 @@ $env:AIFRED_DB_PATH = "data\dev.db"; .\.venv\Scripts\python.exe -m uvicorn app.m
 
 # 상시 실행(운영, 저장소 루트에서) — 자세한 내용은 README "매일 쓰기"
 .\scripts\build-web.ps1          # 웹 빌드(배포)
-.\scripts\run-server.ps1         # 운영 서버 0.0.0.0:8080, 실제 DB server\data\aifred.db, 로그 server\logs
+.\scripts\run-server.ps1         # 운영 서버 0.0.0.0:8080, 실제 DB server\data\aifred.db, 로그 server\logs, certs\aifred.pem·aifred-key.pem이 있으면 HTTPS
 .\scripts\install-autostart.ps1  # 작업 스케줄러 "AIFred Server"(로그온 시 실행) 등록 / uninstall-autostart.ps1로 해제
 
 # web/
@@ -30,10 +30,12 @@ npm run lint         # oxlint
 npm run build
 npm run screens      # Playwright 스크린샷 → web/screenshots/ (자세한 내용은 web/README.md)
 npm run screens -- -g edit-form                                          # 시나리오 하나만
+npm run icons        # icons-src/*.svg → public/ 아이콘 PNG·favicon
 ```
 
 - 서버 린터는 아직 없다.
 - PowerShell 5.1의 `Invoke-RestMethod`는 UTF-8 응답의 한글을 깨뜨려 보여 준다. 데이터 자체는 정상이다.
+- **운영 서버는 이 노트북이 아니라 집 PC(`C:\dev\AIfred`)에서 돈다.** 설치와 업데이트는 `docs/host-setup.md`를 따른다(GitHub `quotation2520/AIfred`에서 pull). 노트북은 개발용이고 자동 실행을 등록하지 않는다.
 - 실제 데이터(`server/data/aifred.db`)는 8080 운영 서버만 쓴다. 개발 서버는 `AIFRED_DB_PATH=data\dev.db`로 띄운다. 운영 서버를 다시 시작하면 스키마 변경(`add_missing_columns`)과 프리셋 시드가 실제 DB에 적용된다. 업데이트 배포 순서: 테스트 통과 → `build-web.ps1` → 운영 서버 재시작(README).
 - `scripts/*.ps1`은 UTF-8 BOM으로 저장한다. PowerShell 5.1이 BOM이 없는 한글 스크립트를 CP949로 읽기 때문이다.
 - 한글이나 따옴표가 들어간 커밋 메시지는 파일에 써서 `git commit -F`로 넘긴다.
@@ -68,7 +70,8 @@ npm run screens -- -g edit-form                                          # 시�
 - `App`의 `today` prop은 테스트에서 날짜를 고정하는 용도다. 앱에서는 이 prop 없이 `useToday()`를 쓴다.
 - 완료 체크와 게이지 조절은 화면을 먼저 바꾸고(낙관적 갱신) 서버 응답으로 확정한다. 둘 다 `UndoToast`로 실행 취소를 제공한다. 카드는 항상 정렬 위치에 있고, 위치가 바뀌면 `useFlip`이 이동 애니메이션을 준다. 이동 중인 카드는 250ms 동안 체크를 받지 않는다. 애니메이션 시간은 `lib/motion.ts`에 있고, `prefers-reduced-motion`이면 끈다.
 - 게이지(`GaugeSlider`)는 끌어서 잔여일을 0~주기로 고치는 슬라이더다. PATCH { lastDoneAt }로 저장하고 완료 기록은 만들지 않는다(보정). 가로로 10px 이상 움직여야 조절을 시작해서 세로 스크롤과 구분한다.
-- 폰은 HTTP(운영 `http://<PC IP>:8080`, 개발 `:5173`)로 접속하므로 HTTPS 전용 브라우저 API(`crypto.randomUUID`, 서비스 워커, 클립보드 등)를 쓸 수 없다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
+- 운영은 HTTPS(`https://<집PC IP>:8080`, mkcert)라 서비스 워커와 PWA 설치가 동작한다. 개발(`:5173`)은 HTTP라서 HTTPS 전용 브라우저 API를 기본으로 쓰지 않는다. UUID는 `api/chores.ts`의 `uuidV4()`를 쓴다.
+- 새 버전 반영(`lib/appUpdate.ts`, `registerAppUpdate.ts`, vite-plugin-pwa `registerType: 'prompt'`): 새 서비스 워커가 오면 보류가 없고 마지막 입력 뒤 3초가 지났을 때 자동으로 새로고침한다(앱이 숨겨져 있으면 바로). 보류를 거는 곳은 `useBackLayer` 층, `UndoToast`, `GaugeSlider` 조절, `request()` 진행 중이다. 시트 밖에서 오래 걸리는 조작을 새로 만들면 `useUpdateHold`를 건다.
 - 컴포넌트 테스트(`App.test.tsx`)는 jsdom에서 `src/test/fetchMock.ts`로 fetch를 가짜로 대신한다. 선택 화면을 여는 테스트는 `presetRoutes()`를 mockFetch 경로에 넣는다. jsdom의 history는 테스트 사이에 남으므로 App.test의 afterEach가 기록 처리를 기다린 뒤 `/`로 되돌린다. 뒤로 가기는 `pressBack()`으로 누른다. vitest를 동시에 두 개 돌리면 history 테스트가 시간 초과로 실패할 수 있다. afterEach에서 localStorage를 비우므로, 접힌 카드까지 모두 보여야 하는 테스트는 `rememberLaterOpen()`을 쓴다.
 - 스크린샷 도구(`web/screens/`)는 `/api`를 가짜 응답으로 처리하고, 시계를 2026-10-13 09:00 KST로 고정한다. 시나리오가 화면 문구에 의존하므로, 문구를 바꾸면 `screens/scenarios.ts`도 함께 고친다.
 
@@ -76,7 +79,6 @@ npm run screens -- -g edit-form                                          # 시�
 - 수행 이력(F6)
 - 정기 알림(F7: APScheduler, pywebpush, `/api/arrived`)
 - 오프라인과 동기화(F8: Dexie)
-- HTTPS(mkcert)
 
 의존성은 이미 설치돼 있지만 아직 쓰는 코드가 없다.
 
